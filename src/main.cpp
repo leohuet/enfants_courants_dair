@@ -14,7 +14,7 @@
 #define VBUS_SENSE_PIN GPIO_NUM_9
 #define BATT_PIN GPIO_NUM_7
 #define THRESHOLD 2500
-#define SLEEP_TIME 120
+#define SLEEP_TIME 900
 #define uS_TO_S_FACTOR 1000000ULL
 
 // Struct for OSC parameters corresponding to each data
@@ -108,6 +108,7 @@ void vbusWatcherTask(void *pvParameters) {
       // USB is not plugged in, keep running
       Serial.println("USB unplugged, trying to reconnect to Wi-Fi");
       toWakeup = false;
+      rtc_gpio_deinit(VBUS_SENSE_PIN);
       WiFi.mode(WIFI_STA);
       begin_wifi();
     }
@@ -242,15 +243,15 @@ void setup(){
   }
   
   delay(2000);
-  xTaskCreatePinnedToCore(
-    vbusWatcherTask,   // task function
-    "vbusWatcher",     // name
-    2048,              // stack size (bytes)
-    NULL,              // parameters
-    1,                 // priority (low is fine here)
-    NULL,              // task handle (not needed)
-    0                  // core to pin to (0 or 1)
-  );
+  // xTaskCreatePinnedToCore(
+  //   vbusWatcherTask,   // task function
+  //   "vbusWatcher",     // name
+  //   2048,              // stack size (bytes)
+  //   NULL,              // parameters
+  //   1,                 // priority (low is fine here)
+  //   NULL,              // task handle (not needed)
+  //   0                  // core to pin to (0 or 1)
+  // );
 
   Serial.println("Starting programm..");
 }
@@ -262,6 +263,30 @@ void loop(){
   if(espUiOn){
     readingFreq = readingFrequency->getInt();
     started = isStarted->getBool();
+  }
+  if(analogRead(VBUS_SENSE_PIN) > THRESHOLD) {
+    // USB just got plugged in while we were running — go to sleep
+    Serial.println("USB plugged in, going to sleep");
+    toWakeup = true;
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(200);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(200);
+    int battRaw = analogRead(BATT_PIN);
+    float battVoltage = (battRaw / 2400) * 4;
+    Serial.flush();
+    WiFi.mode(WIFI_OFF);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_SENSE_PIN, 0);
+    esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
+    esp_light_sleep_start();
+  }
+  else if(analogRead(VBUS_SENSE_PIN) < THRESHOLD && toWakeup) {
+    // USB is not plugged in, keep running
+    Serial.println("USB unplugged, trying to reconnect to Wi-Fi");
+    toWakeup = false;
+    rtc_gpio_deinit(VBUS_SENSE_PIN);
+    WiFi.mode(WIFI_STA);
+    begin_wifi();
   }
   if((millis() - lastReading) > readingFreq && started){
     lastReading = millis();
