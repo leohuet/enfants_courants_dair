@@ -55,9 +55,12 @@ void begin_wifi(){
   Serial.print("Connecting");
   while (WiFi.status() != WL_CONNECTED) {
     digitalWrite(LED_BUILTIN, LOW);
-    delay(500);
+    digitalWrite(D0, LOW);
+    delay(250);
     Serial.print(".");
     digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(D0, HIGH);
+    delay(250);
   }
   Serial.println("");
   Serial.println("IP address: ");

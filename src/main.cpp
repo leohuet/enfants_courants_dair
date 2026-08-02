@@ -76,7 +76,7 @@ WiFiUDP Udp;
 
 void displayBatteryCapacity(){
   int battRaw = analogRead(BATT_PIN);
-  float battVoltage = (battRaw / 2400.0) * 4.0;
+  float battVoltage = (battRaw / 2430.0) * 4.13;
   if (battVoltage <= 3.7){
     digitalWrite(D0, HIGH);
     digitalWrite(D1, LOW);
@@ -96,12 +96,12 @@ void displayBatteryCapacity(){
 
 void vbusWatcherTask(void *pvParameters) {
   while(true){
+    displayBatteryCapacity();
     if(analogRead(VBUS_SENSE_PIN) > THRESHOLD) {
       // USB just got plugged in while we were running — go to sleep
       Serial.println("USB plugged in, going to sleep");
       toWakeup = true;
       digitalWrite(LED_BUILTIN, HIGH);
-      displayBatteryCapacity();
       Serial.flush();
       WiFi.mode(WIFI_OFF);
       esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_SENSE_PIN, 0);
@@ -111,7 +111,6 @@ void vbusWatcherTask(void *pvParameters) {
     else if(analogRead(VBUS_SENSE_PIN) < THRESHOLD && toWakeup) {
       // USB is not plugged in, keep running
       Serial.println("USB unplugged, trying to reconnect to Wi-Fi");
-      displayBatteryCapacity();
       toWakeup = false;
       rtc_gpio_deinit(VBUS_SENSE_PIN);
       WiFi.mode(WIFI_STA);
@@ -141,7 +140,7 @@ void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
     oscParams[i].address = new PersistentValue(label + "_address", ControlColor::Peterriver, baseOscParams[i].address, tabId);
     oscParams[i].minVal = new PersistentValue(label + "_min (%)", ControlColor::Wetasphalt, 0, 0, 100, tabId);
     oscParams[i].maxVal = new PersistentValue(label + "_max (%)", ControlColor::Wetasphalt, 100, 0, 100, tabId);
-    oscParams[i].sendToMad = new PersistentValue(label + "_Mad", ControlColor::Alizarin, baseOscParams[i].sendToMad, tabId);
+    oscParams[i].sendToMad = new PersistentValue(label + "_mad", ControlColor::Alizarin, baseOscParams[i].sendToMad, tabId);
     oscParams[i].testOn = new PersistentValue(label + "_test", ControlColor::Alizarin, baseOscParams[i].testOn, tabId);
   }
 }
@@ -150,7 +149,7 @@ void setupUI() {
   uint16_t generalTab = ESPUI.addControl(ControlType::Tab, "Network", "Network");
   uint16_t oscTabs[] = {
     ESPUI.addControl(ControlType::Tab, "OSC meta data", "OSC meta data"),
-    ESPUI.addControl(ControlType::Tab, "OSC 1 data", "OSC 1 data"),
+    ESPUI.addControl(ControlType::Tab, "OSC 1 data", "OSC 1 data")
   };
   uint16_t radarTab = ESPUI.addControl(ControlType::Tab, "Device control", "Device control");
   
@@ -163,7 +162,7 @@ void setupUI() {
   // osc tabs
   // for each parameter, display controls for address, min & max, toggle for Touch/Ableton send and test button
   addOscControls(0, META_PARAMS, oscTabs[0]);
-  addOscControls(META_PARAMS, META_PARAMS + 2, oscTabs[1]);
+  addOscControls(META_PARAMS, META_PARAMS + 1, oscTabs[1]);
 
   // radar tab
   readingFrequency = new PersistentValue("Reading frequency (in ms)", ControlColor::Wetasphalt, 100, 50, 2000, radarTab);
@@ -272,12 +271,9 @@ void loop(){
   
   if((millis() - lastReading) > readingFreq && started){
     lastReading = millis();
-    int battRaw = analogRead(BATT_PIN);
-    float battVoltage = (battRaw / 2400.0) * 4.0;
-    // Serial.println(battVoltage);
     data = analogRead(D5);
-    data = moyenne_glissante(value_for_mean, data) / 3200.0;
-    if(data != old_data){
+    data = moyenne_glissante(value_for_mean, data) / 3500.0;
+    if(data != old_data && data >= 0.10){
       // Serial.println(data);
       old_data = data;
       sendData(data);
