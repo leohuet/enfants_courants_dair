@@ -274,7 +274,7 @@ void loop(){
     data = analogRead(D5);
     data = moyenne_glissante(value_for_mean, data) / 3500.0;
     if(data != old_data && data >= 0.10){
-      // Serial.println(data);
+      data = data - 0.10;
       old_data = data;
       sendData(data);
     }
