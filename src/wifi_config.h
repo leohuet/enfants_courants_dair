@@ -1,6 +1,8 @@
 #include <Arduino.h>
 // Network stack
+#include <SPI.h> 
 #include <WiFi.h>
+#include <Ethernet.h>
 #include <ArduinoOTA.h>
 #ifndef HOST
 #define HOST "ESP_ROMAIN"
@@ -9,6 +11,7 @@
 #include <OSCMessage.h>
 #include "credentials.h"
 
+#define ETH_CS_PIN GPIO_NUM_44
 #define nLOG(message) udp.broadcastTo((String("\n") + String(message)).c_str(), 1234) // listen with `nc -kluvw 0 1234`
 // listen with `nc -kluvw 0 1234`*/
 
@@ -18,7 +21,11 @@
 #define OTA_PASS "question"
 
 char host[22];
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEF };
+IPAddress ip(192, 168, 1, 177);
+IPAddress myDns(192, 168, 1, 1);
 
+EthernetClient client;
 
 void wifi_OTA(void * _){
   while(true){
@@ -105,4 +112,36 @@ void begin_wifi(){
         NULL,            // Task handle
         0                // pin to core 1
   );
+}
+
+void begin_ethernet(){
+  // Ethernet
+  Ethernet.init(ETH_CS_PIN);
+  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(D0, LOW);
+  delay(250);
+  Serial.print(".");
+  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(D0, HIGH);
+  delay(250);
+  if (Ethernet.begin(mac) == 0) {
+    Serial.println("Failed to configure Ethernet using DHCP");
+    // Check for Ethernet hardware present
+    if (Ethernet.hardwareStatus() == EthernetNoHardware) {
+      Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware. :(");
+      while (true) {
+        Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware. :(");
+        delay(100); // do nothing, no point running without Ethernet hardware
+      }
+    }
+    if (Ethernet.linkStatus() == LinkOFF) {
+      Serial.println("Ethernet cable is not connected.");
+    }
+    // try to configure using IP address instead of DHCP:
+    Ethernet.begin(mac, ip, myDns);
+  } 
+  else {
+    Serial.print("  DHCP assigned IP ");
+    Serial.println(Ethernet.localIP());
+  }
 }

@@ -13,9 +13,10 @@
 #define META_PARAMS 6
 #define VBUS_SENSE_PIN GPIO_NUM_9
 #define BATT_PIN GPIO_NUM_7
-#define WIND_VANE_PIN GPIO_NUM_8
+#define ANEMOMETER_PIN GPIO_NUM_4
+#define WIND_VANE_PIN GPIO_NUM_5
 #define COMPASS_DIRECTIONS 16
-#define THRESHOLD 2500
+#define VSENSE_THRESHOLD 2500
 #define SLEEP_TIME 900
 #define uS_TO_S_FACTOR 1000000ULL
 
@@ -67,15 +68,19 @@ uint32_t lastTest = 0;
 bool toWakeup = false;
 
 const uint8_t size_mean = 10;
-uint16_t value_for_mean[size_mean];
+uint16_t wind_vane_for_mean[size_mean];
+float anemometer_for_mean[size_mean];
 
-const int anemometerPin = D10;
 volatile unsigned long anemometerCount = 0;
 unsigned long lastSampleTime = 0;
 const unsigned long SAMPLE_INTERVAL_MS = 1500;
-long windDirTot[COMPASS_DIRECTIONS];
+// long windDirTot[COMPASS_DIRECTIONS];
 const int reading[COMPASS_DIRECTIONS] = {110, 250, 305, 385, 555, 785, 980, 1290, 1630, 2010, 2325, 2530, 2850, 3125, 3380, 3705};
 const int compass[COMPASS_DIRECTIONS] = {112,  67,  90, 157, 135, 202, 180,  22,  45, 247, 225, 337,   0, 292, 315,  270};
+long windDirTot = 0;
+long windDirCount = 0;
+long windDirNow = 0;
+long windDirPrev = 0;
 
 // UDP pour les messages OSC
 WiFiUDP Udp;
@@ -104,7 +109,7 @@ void displayBatteryCapacity(){
 void vbusWatcherTask(void *pvParameters) {
   while(true){
     displayBatteryCapacity();
-    if(analogRead(VBUS_SENSE_PIN) > THRESHOLD) {
+    if(analogRead(VBUS_SENSE_PIN) > VSENSE_THRESHOLD) {
       // USB just got plugged in while we were running — go to sleep
       Serial.println("USB plugged in, going to sleep");
       toWakeup = true;
@@ -115,7 +120,7 @@ void vbusWatcherTask(void *pvParameters) {
       esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
       esp_light_sleep_start();
     }
-    else if(analogRead(VBUS_SENSE_PIN) < THRESHOLD && toWakeup) {
+    else if(analogRead(VBUS_SENSE_PIN) < VSENSE_THRESHOLD && toWakeup) {
       // USB is not plugged in, keep running
       Serial.println("USB unplugged, trying to reconnect to Wi-Fi");
       toWakeup = false;
@@ -128,6 +133,18 @@ void vbusWatcherTask(void *pvParameters) {
 }
 
 uint16_t moyenne_glissante(uint16_t data_array[size_mean], uint16_t data){
+	// calcule la moyenne glissante sur x données (défini par size_mean)
+	uint16_t somme = 0;
+	for (int i=1; i<size_mean; i++){
+		data_array[i-1] = data_array[i];
+		somme += data_array[i-1];
+	}
+	data_array[size_mean-1] = data;
+	somme += data_array[size_mean-1];
+	return somme/size_mean;
+}
+
+float moyenne_glissante(float data_array[size_mean], float data){
 	// calcule la moyenne glissante sur x données (défini par size_mean)
 	uint16_t somme = 0;
 	for (int i=1; i<size_mean; i++){
@@ -236,9 +253,17 @@ void readAnemometer(){
 void setup(){
   // open serial for USB and radar UART
   Serial.begin(115200);
-  pinMode(anemometerPin, INPUT_PULLUP);
+  pinMode(ANEMOMETER_PIN, INPUT_PULLUP);
   pinMode(WIND_VANE_PIN, INPUT);
-  attachInterrupt(digitalPinToInterrupt(anemometerPin), readAnemometer, FALLING);
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(VBUS_SENSE_PIN, INPUT);
+  pinMode(BATT_PIN, INPUT);
+  pinMode(D0, OUTPUT);
+  pinMode(D1, OUTPUT);
+  pinMode(D2, OUTPUT);
+  attachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN), readAnemometer, FALLING);
+  delay(2000);
+  begin_ethernet();
   delay(2000);
 
   if(espUiOn){
@@ -269,17 +294,36 @@ void loop(){
     readingFreq = readingFrequency->getInt();
     started = isStarted->getBool();
   }
-  unsigned long now = millis();
-  uint16_t windDir = moyenne_glissante(value_for_mean, analogRead(WIND_VANE_PIN));
-  Serial.println(windDir);
-  // if (now - lastSampleTime >= SAMPLE_INTERVAL_MS) {
-  //   float elapsedSeconds = (now - lastSampleTime) / 1000.0;
-  //   float closuresPerSecond = anemometerCount / elapsedSeconds;
-  //   float windSpeed = closuresPerSecond * 2.4;
 
-  //   lastSampleTime = now;
-  //   anemometerCount = 0;
-  //   Serial.println(windSpeed);
-  // }
-  delay(20);
+  unsigned long now = millis();
+  if (now - lastSampleTime >= SAMPLE_INTERVAL_MS) {
+    float elapsedSeconds = (now - lastSampleTime) / 1000.0;
+    float closuresPerSecond = anemometerCount / elapsedSeconds;
+    float windSpeed = moyenne_glissante(anemometer_for_mean, closuresPerSecond * 2.4);
+    lastSampleTime = now;
+    anemometerCount = 0;
+    Serial.print("Wind speed (km/h): ");
+    Serial.println(windSpeed);
+
+    uint8_t windDir;
+    if(windDirCount > 0) windDir = windDirTot / windDirCount; else windDir = 0;
+    while (windDir >= 360) windDir -= 360;
+    while (windDir < 0) windDir += 360;
+    Serial.print("Wind dir:");
+    Serial.println(windDir);
+    windDirTot = 0;
+    windDirCount = 0;
+  }
+
+  uint16_t windDirRaw = analogRead(WIND_VANE_PIN);
+  for(uint8_t i=0; i < COMPASS_DIRECTIONS; i++){
+    if(windDirRaw >= reading[i]) windDirNow = compass[i];
+  }
+  if(windDirNow - windDirPrev > 180) windDirNow -= 360;
+  if(windDirPrev - windDirNow > 180) windDirNow += 360;
+  // Update total and count of data points for calculating average
+  windDirTot += windDirNow;
+  windDirCount++;
+  windDirPrev = windDirNow;
+  delay(50);
 }
