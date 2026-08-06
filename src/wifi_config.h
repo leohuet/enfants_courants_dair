@@ -1,6 +1,6 @@
 #include <Arduino.h>
 // Network stack
-#include <SPI.h> 
+#include <SPI.h>
 #include <WiFi.h>
 #include <Ethernet.h>
 #include <ArduinoOTA.h>
@@ -20,10 +20,20 @@
 
 #define OTA_PASS "question"
 
+#define ETH_PHY_TYPE  ETH_PHY_W5500
+#define ETH_PHY_ADDR  1
+#define ETH_PHY_CS    GPIO_NUM_44
+#define ETH_PHY_IRQ   -1
+#define ETH_PHY_RST   -1
+#define ETH_SPI_SCK   GPIO_NUM_7
+#define ETH_SPI_MISO  GPIO_NUM_8
+#define ETH_SPI_MOSI  GPIO_NUM_9
+
 char host[22];
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEF };
 IPAddress ip(192, 168, 1, 177);
 IPAddress myDns(192, 168, 1, 1);
+volatile bool ethGotIp = false;
 
 EthernetClient client;
 
@@ -117,6 +127,9 @@ void begin_wifi(){
 void begin_ethernet(){
   // Ethernet
   Ethernet.init(ETH_CS_PIN);
+  WiFi.mode(WIFI_OFF);
+  esp_netif_init();
+  esp_event_loop_create_default();
   digitalWrite(LED_BUILTIN, LOW);
   digitalWrite(D0, LOW);
   delay(250);
@@ -141,7 +154,7 @@ void begin_ethernet(){
     Ethernet.begin(mac, ip, myDns);
   } 
   else {
-    Serial.print("  DHCP assigned IP ");
+    Serial.print("DHCP assigned IP: ");
     Serial.println(Ethernet.localIP());
   }
 }
