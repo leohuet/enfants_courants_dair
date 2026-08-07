@@ -28,25 +28,27 @@
 OSCParam oscParams[NUM_PARAMS];
 
 baseOSCParam baseOscParams[] = {
-  {"toit_wind_speed", "/toit/wind_spd", 0, 100, true, false},
-  {"toit_wind_dir", "/toit/wind_dir", 0, 100, true, false}
+  {"Wind_speed_km/h", "/toit/wind_speed", 0, 50, true, false},
+  {"Wind_dir", "/toit/wind_dir", 0, 360, true, false}
 };
 
+unsigned long now;
+unsigned long lastSampleTime = 0;
 
 const uint8_t wind_vane_size_mean = 5;
 const uint8_t anemometer_size_mean = 10;
 uint16_t wind_vane_for_mean[wind_vane_size_mean];
 float anemometer_for_mean[anemometer_size_mean];
+float oldWindSpeed = 0.0;
 
 volatile unsigned long anemometerCount = 0;
-unsigned long lastSampleTime = 0;
 const int reading[COMPASS_DIRECTIONS] = {110, 250, 300, 385, 555, 785, 980, 1290, 1630, 2010, 2325, 2530, 2850, 3125, 3380, 3705};
 const int compass[COMPASS_DIRECTIONS] = {112,  67,  90, 157, 135, 202, 180,  22,  45, 247, 225, 337,   0, 292, 315,  270};
 long windDirTot = 0;
 long windDirCount = 0;
 long windDirNow = 0;
 long windDirPrev = 0;
-
+float oldWindDir = 0.0;
 
 void readAnemometer(){
   anemometerCount++;
@@ -66,20 +68,17 @@ void setup(){
   pinMode(LED_B_PIN, OUTPUT);
   attachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN), readAnemometer, FALLING);
   delay(2000);
-  begin_wifi();
+  onEthernetBool = begin_ethernet();
   delay(2000);
+  if(onEthernetBool) ethUdp.begin(8888);
+  else begin_wifi();
+
   if(espUiOn){
     // ESPUI control init
     ESPUI.begin("Les enfants des courants d'air");
     setupUI();
     delay(2000);
     onBatteryBool = onBattery->getBool();
-    onEthernetBool = onEthernet->getBool();
-  }
-
-  if(onEthernetBool){
-    begin_ethernet();
-    ethUdp.begin(8888);
   }
 
   if(onBatteryBool){
@@ -112,25 +111,42 @@ void loop(){
     started = isStarted->getBool();
   }
 
-  unsigned long now = millis();
-  if (now - lastSampleTime >= readingFreq && started) {
+  now = millis();
+
+  if ((now - lastSampleTime) >= readingFreq && started) {
+    lastSampleTime = now;
     float elapsedSeconds = (now - lastSampleTime) / 1000.0;
     float closuresPerSecond = anemometerCount / elapsedSeconds;
     float windSpeed = moyenne_glissante(anemometer_for_mean, anemometer_size_mean, closuresPerSecond * 2.4);
-    lastSampleTime = now;
-    anemometerCount = 0;
-    Serial.print("Wind speed (km/h): ");
-    Serial.println(windSpeed);
-    sendData(0, windSpeed);
+    float minSpeed = 0.0;
+    float maxSpeed = 50.0;
+    if(espUiOn){
+      minSpeed = float(oscParams[0].minVal->getInt());
+      maxSpeed = float(oscParams[0].minVal->getInt());
+    }
+    if(windSpeed >= minSpeed && windSpeed != oldWindSpeed){
+      oldWindSpeed = windSpeed;
+      Serial.println(windSpeed);
+      if(windSpeed > maxSpeed) windSpeed = maxSpeed;
+      // windSpeed = (windSpeed - minSpeed) / (maxSpeed - minSpeed);
+      anemometerCount = 0;
+      // Serial.print("Wind speed: ");
+      // Serial.println(windSpeed);
+      sendData(0, windSpeed);
+    }
 
-    int windDir;
+    float windDir;
     if(windDirCount > 0) windDir = windDirTot / windDirCount; else windDir = 0;
     while (windDir >= 360) windDir -= 360;
     while (windDir < 0) windDir += 360;
     windDir = moyenne_glissante(wind_vane_for_mean, wind_vane_size_mean, windDir);
-    Serial.print("Wind dir (°):");
-    Serial.println(windDir);
-    sendData(1, windDir);
+    if(windDir != oldWindDir){
+      oldWindDir = windDir;
+      windDir = windDir / 360.0;
+      // Serial.print("Wind dir: ");
+      // Serial.println(windDir);
+      sendData(1, windDir);
+    }
     windDirTot = 0;
     windDirCount = 0;
   }

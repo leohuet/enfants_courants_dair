@@ -26,8 +26,8 @@ extern OSCParam oscParams[];
 struct baseOSCParam {
   String name;
   String address;
-  uint8_t minVal;
-  uint8_t maxVal;
+  uint16_t minVal;
+  uint16_t maxVal;
   bool sendToMad;
   bool testOn;
 };
@@ -36,7 +36,6 @@ extern baseOSCParam baseOscParams[];
 //persistentvalues for ESPUI control values 
 PersistentValue* isStarted;
 PersistentValue* onBattery;
-PersistentValue* onEthernet;
 
 PersistentValue* ipAddress;
 PersistentValue* madPort;
@@ -52,7 +51,7 @@ bool toWakeup = false;
 // UDP pour les messages OSC
 WiFiUDP wifiUdp;
 EthernetUDP ethUdp;
-String baseIP = "192.168.1.102";
+String baseIP = "192.168.68.100";
 uint16_t madPortValue = 9001;
 bool onEthernetBool = false;
 bool onBatteryBool = false;
@@ -82,7 +81,6 @@ void setupUI() {
   ESPUI.addControl(ControlType::Separator, "Global controls", "", ControlColor::None, generalTab);
   isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
   onBattery = new PersistentValue("On battery", ControlColor::Alizarin, false, generalTab);
-  onEthernet = new PersistentValue("On ethernet", ControlColor::Alizarin, false, generalTab);
   ESPUI.addControl(ControlType::Separator, "Network", "", ControlColor::None, generalTab);
   ipAddress = new PersistentValue("IP destination", ControlColor::Peterriver, baseIP, generalTab);
   madPort = new PersistentValue("mad port", ControlColor::Wetasphalt, 9001, 1000, 12000, generalTab);
@@ -160,7 +158,6 @@ void vbusWatcherTask(void *pvParameters) {
       Serial.println("USB unplugged, trying to reconnect..");
       toWakeup = false;
       rtc_gpio_deinit(VBUS_SENSE_PIN);
-	  if(espUiOn) onEthernetBool = onEthernet->getBool();
       if(onEthernetBool) begin_ethernet();
       else{
         WiFi.mode(WIFI_STA);
@@ -181,10 +178,8 @@ void sendData(uint8_t index, float value){
   if(espUiOn){
     outIP.fromString(ipAddress->getString());
     address = oscParams[index].address->getString();
-    Serial.println(address);
     toMad = oscParams[index].sendToMad->getBool();
     madPortValue = madPort->getInt();
-    onEthernetBool = onEthernet->getBool();
   }
   if(!toMad){ return;}
   OSCMessage msg(address.c_str());

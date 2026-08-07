@@ -115,37 +115,34 @@ void begin_wifi(){
   );
 }
 
-void begin_ethernet(){
+bool begin_ethernet(){
   // Ethernet
   Ethernet.init(ETH_CS_PIN);
   WiFi.mode(WIFI_OFF);
   esp_netif_init();
   esp_event_loop_create_default();
-  digitalWrite(LED_BUILTIN, LOW);
-  digitalWrite(D0, LOW);
-  delay(250);
-  Serial.print(".");
-  digitalWrite(LED_BUILTIN, HIGH);
-  digitalWrite(D0, HIGH);
-  delay(250);
-  if (Ethernet.begin(mac) == 0) {
-    Serial.println("Failed to configure Ethernet using DHCP");
-    // Check for Ethernet hardware present
-    if (Ethernet.hardwareStatus() == EthernetNoHardware) {
-      Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware. :(");
-      while (true) {
-        Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware. :(");
-        delay(100); // do nothing, no point running without Ethernet hardware
-      }
-    }
+  unsigned long startEthernet = millis();
+  while(true){
+    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(D0, LOW);
+    delay(250);
+    Serial.print(".");
+    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(D0, HIGH);
+    delay(250);
     if (Ethernet.linkStatus() == LinkOFF) {
       Serial.println("Ethernet cable is not connected.");
+      if(millis() - startEthernet > 5000){
+        return false;
+        break;
+      }
     }
-    // try to configure using IP address instead of DHCP:
-    Ethernet.begin(mac, ip, myDns);
-  } 
-  else {
+    else if(Ethernet.linkStatus() == LinkON) break;
+  }
+  if(Ethernet.begin(mac) != 0){
     Serial.print("DHCP assigned IP: ");
     Serial.println(Ethernet.localIP());
   }
+  else Ethernet.begin(mac, ip, myDns);
+  return true;
 }
