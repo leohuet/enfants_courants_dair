@@ -17,3 +17,14 @@ Avant toute chose, tu pourras créer un fichier "credentials.h" dans le dossier 
 #define PASSWORD "password"
 ```
 
+
+## Hardware
+
+### Pied souffle
+
+Voici comment brancher les éléments du pied souffle.
+
+<img width="1512" alt="pied_souffle_schema" src="https://raw.githubusercontent.com/leohuet/enfants_courants_dair/master/include/pics/explication_1.jpg">
+
+Lorsque la batterie est branchée et que tu le branches aussi en USB, la LED rouge intégrée se met à clignoter et la LED orange s'éteint. Cela signifie que l'ESP se met en mode "light sleep" et que la batterie se recharge. Plusieurs niveaux de charge sont affichés par la LED externe : rouge = -50% de batterie, vert = entre 50 et 80% de batterie, bleu = plus de 80% de batterie. 
+
