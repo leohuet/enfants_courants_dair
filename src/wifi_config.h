@@ -28,6 +28,15 @@ IPAddress myDns(192, 168, 1, 1);
 
 EthernetClient client;
 
+void ethernet_OTA(void * _){
+  while(true){
+    Ethernet.maintain();
+    ArduinoOTA.handle();
+    vTaskDelay(1);
+  }
+  vTaskDelete(NULL);
+}
+
 void wifi_OTA(void * _){
   while(true){
     WiFi.status();
@@ -36,6 +45,7 @@ void wifi_OTA(void * _){
   }
   vTaskDelete(NULL);
 }
+
 
 void begin_wifi(){
   // build and set hostname
@@ -82,9 +92,8 @@ void begin_wifi(){
         Serial.printf("Disconnect reason: %d\n",
                       info.wifi_sta_disconnected.reason);
     }
-});
-
-  ArduinoOTA.setHostname(host);
+  });
+  ArduinoOTA.setHostname("arduino");
   ArduinoOTA.setPassword(OTA_PASS);
   ArduinoOTA
   .onStart([]() {
@@ -102,7 +111,7 @@ void begin_wifi(){
       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
-  ArduinoOTA.begin();
+  ArduinoOTA.begin(false);
 
   xTaskCreatePinnedToCore(
         wifi_OTA,     // Function that should be called
@@ -114,6 +123,7 @@ void begin_wifi(){
         0                // pin to core 1
   );
 }
+
 
 bool begin_ethernet(){
   // Ethernet
@@ -151,5 +161,35 @@ bool begin_ethernet(){
     Serial.println(Ethernet.localIP());
   }
   else Ethernet.begin(mac, ip, myDns);
+  ArduinoOTA.setMdnsEnabled(false);
+  ArduinoOTA.setHostname(host);
+  ArduinoOTA.setPassword(OTA_PASS);
+  ArduinoOTA
+  .onStart([]() {
+  })
+  .onEnd([]() {
+  })
+  .onProgress([](unsigned int progress, unsigned int total) {
+      digitalWrite(LED_BUILTIN, FAST_BLINK);
+  })
+  .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  ArduinoOTA.begin(true);
+
+  xTaskCreatePinnedToCore(
+        ethernet_OTA,     // Function that should be called
+        "ethernet OTA",    // Name of the task (for debugging)
+        20000,           // Stack size (bytes)
+        NULL,            // Parameter to pass
+        1,               // Task priority
+        NULL,            // Task handle
+        0                // pin to core 1
+  );
   return true;
 }
