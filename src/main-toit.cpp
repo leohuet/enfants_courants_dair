@@ -28,12 +28,9 @@
 OSCParam oscParams[NUM_PARAMS];
 
 baseOSCParam baseOscParams[] = {
-  {"Wind_speed_km/h", "/toit/wind_speed", 0, 50, true, false},
-  {"Wind_dir", "/toit/wind_dir", 0, 360, true, false}
+  {"Wind_speed", "km/h", "/toit/wind_speed", 0, 50, true, false},
+  {"Wind_dir", "°", "/toit/wind_dir", 0, 360, true, false}
 };
-
-unsigned long now;
-unsigned long lastSampleTime = 0;
 
 const uint8_t wind_vane_size_mean = 5;
 const uint8_t anemometer_size_mean = 10;
@@ -112,14 +109,24 @@ void loop(){
 
   now = millis();
 
-  if ((now - lastSampleTime) >= readingFreq && started) {
-    float elapsedSeconds = (now - lastSampleTime) / 1000.0;
+  // test OSC if toggle on
+  if((now - lastTest) > 2000){
+    lastTest = millis();
+    for(uint8_t a=0; a<NUM_PARAMS; a++){
+      if(oscParams[a].testOn->getBool()){
+        testSend(a);
+      }
+    }
+  }
+
+  if ((now - lastReading) >= readingFreq && started) {
+    float elapsedSeconds = (now - lastReading) / 1000.0;
     float closuresPerSecond = anemometerCount / elapsedSeconds;
-    float windSpeed = closuresPerSecond * 2.4;
+    float windSpeed = moyenne_glissante(anemometer_for_mean, anemometer_size_mean, closuresPerSecond * 2.4);
     float minSpeed = 0.0;
     float maxSpeed = 50.0;
     anemometerCount = 0;
-    lastSampleTime = now;
+    lastReading = now;
     if(espUiOn){
       minSpeed = float(oscParams[0].minVal->getInt());
       maxSpeed = float(oscParams[0].maxVal->getInt());

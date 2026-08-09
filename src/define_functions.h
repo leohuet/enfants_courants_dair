@@ -26,6 +26,7 @@ extern OSCParam oscParams[];
 
 struct baseOSCParam {
   String name;
+  String dataType;
   String address;
   uint16_t minVal;
   uint16_t maxVal;
@@ -43,6 +44,7 @@ PersistentValue* madPort;
 
 PersistentValue* readingFrequency;
 
+unsigned long now;
 uint32_t lastReading = 0;
 uint32_t lastTest = 0;
 bool toWakeup = false;
@@ -62,9 +64,10 @@ void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
   for (int i = startIdx; i < endIdx; i++) {
     ESPUI.addControl(ControlType::Separator, baseOscParams[i].name.c_str(), baseOscParams[i].name.c_str(), ControlColor::Turquoise, tabId);
     String label = baseOscParams[i].name;
+    String type = baseOscParams[i].dataType;
     oscParams[i].address = new PersistentValue(label + "_address", ControlColor::Peterriver, baseOscParams[i].address, tabId);
-    oscParams[i].minVal = new PersistentValue(label + "_min", ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
-    oscParams[i].maxVal = new PersistentValue(label + "_max", ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].minVal = new PersistentValue(label + "_min_" + type, ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].maxVal = new PersistentValue(label + "_max_" + type, ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
     oscParams[i].sendToMad = new PersistentValue(label + "_mad", ControlColor::Alizarin, baseOscParams[i].sendToMad, tabId);
     oscParams[i].testOn = new PersistentValue(label + "_test", ControlColor::Alizarin, baseOscParams[i].testOn, tabId);
   }
@@ -197,3 +200,29 @@ void sendData(uint8_t index, float value){
   delay(5);
 }
 
+// ====== test OSC send function ======
+void testSend(uint8_t index){
+  IPAddress outIP;
+  outIP.fromString(baseIP);
+  String address = baseOscParams[index].address;
+  float test = 0.5;
+  if(espUiOn){
+    outIP.fromString(ipAddress->getString());
+    address = oscParams[index].address->getString();
+    madPortValue = madPort->getInt();
+  }
+  OSCMessage msg(address.c_str());
+  msg.add(test);
+  if(onEthernetBool){
+    ethUdp.beginPacket(outIP, madPortValue);
+    msg.send(ethUdp);
+    ethUdp.endPacket();
+    msg.empty();
+  }
+  else{
+    wifiUdp.beginPacket(outIP, madPortValue);
+    msg.send(wifiUdp);
+    wifiUdp.endPacket();
+    msg.empty();
+  }
+}

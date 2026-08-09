@@ -17,9 +17,8 @@
 OSCParam oscParams[NUM_PARAMS];
 
 baseOSCParam baseOscParams[] = {
-  {"1_wind_speed_%", "/1/wind_speed", 0, 100, true, false}
+  {"1_wind_speed", "%", "/1/wind_speed", 0, 100, true, false}
 };
-
 
 const uint8_t size_mean = 4;
 uint16_t value_for_mean[size_mean];
@@ -80,8 +79,20 @@ void loop(){
     readingFreq = readingFrequency->getInt();
     started = isStarted->getBool();
   }
+
+  now = millis();
+
+  // test OSC if toggle on
+  if((now - lastTest) > 2000){
+    lastTest = millis();
+    for(uint8_t a=0; a<NUM_PARAMS; a++){
+      if(oscParams[a].testOn->getBool()){
+        testSend(a);
+      }
+    }
+  }
   
-  if((millis() - lastReading) > readingFreq && started){
+  if((now - lastReading) > readingFreq && started){
     lastReading = millis();
     windData = analogRead(WIND_SENS_PIN);
     windData = moyenne_glissante(value_for_mean, size_mean, windData) / 3500.0;
