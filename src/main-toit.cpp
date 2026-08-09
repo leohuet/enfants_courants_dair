@@ -50,13 +50,14 @@ long windDirNow = 0;
 long windDirPrev = 0;
 float oldWindDir = 0.0;
 
+bool espUiOn = true;
+
 void readAnemometer(){
   anemometerCount++;
 }
 
 
 void setup(){
-  // open serial for USB and radar UART
   Serial.begin(115200);
   pinMode(ANEMOMETER_PIN, INPUT_PULLUP);
   pinMode(WIND_VANE_PIN, INPUT);
@@ -76,7 +77,7 @@ void setup(){
   if(espUiOn){
     // ESPUI control init
     ESPUI.begin("Les enfants des courants d'air");
-    setupUI();
+    setupUI(2);
     delay(2000);
     onBatteryBool = onBattery->getBool();
   }
@@ -97,39 +98,37 @@ void setup(){
     digitalWrite(LED_G_PIN, LOW);
     digitalWrite(LED_B_PIN, HIGH);
   }
-
+  
   Serial.println("Starting programm..");
 }
 
 void loop(){
   int readingFreq = SAMPLE_INTERVAL_MS;
-  int inactTimer = 1000;
   bool started = true;
   if(espUiOn){
     readingFreq = readingFrequency->getInt();
-    inactTimer = inactivityTimer->getInt();
     started = isStarted->getBool();
   }
 
   now = millis();
 
   if ((now - lastSampleTime) >= readingFreq && started) {
-    lastSampleTime = now;
     float elapsedSeconds = (now - lastSampleTime) / 1000.0;
     float closuresPerSecond = anemometerCount / elapsedSeconds;
-    float windSpeed = moyenne_glissante(anemometer_for_mean, anemometer_size_mean, closuresPerSecond * 2.4);
+    float windSpeed = closuresPerSecond * 2.4;
     float minSpeed = 0.0;
     float maxSpeed = 50.0;
+    anemometerCount = 0;
+    lastSampleTime = now;
     if(espUiOn){
       minSpeed = float(oscParams[0].minVal->getInt());
-      maxSpeed = float(oscParams[0].minVal->getInt());
+      maxSpeed = float(oscParams[0].maxVal->getInt());
     }
     if(windSpeed >= minSpeed && windSpeed != oldWindSpeed){
       oldWindSpeed = windSpeed;
-      Serial.println(windSpeed);
       if(windSpeed > maxSpeed) windSpeed = maxSpeed;
-      // windSpeed = (windSpeed - minSpeed) / (maxSpeed - minSpeed);
-      anemometerCount = 0;
+      windSpeed = (windSpeed - minSpeed) / (maxSpeed - minSpeed);
+      windSpeed = ((int) (windSpeed * 100)) / 100.0;
       // Serial.print("Wind speed: ");
       // Serial.println(windSpeed);
       sendData(0, windSpeed);
@@ -139,10 +138,17 @@ void loop(){
     if(windDirCount > 0) windDir = windDirTot / windDirCount; else windDir = 0;
     while (windDir >= 360) windDir -= 360;
     while (windDir < 0) windDir += 360;
+    float minDir = 0.0;
+    float maxDir = 50.0;
+    if(espUiOn){
+      minDir = float(oscParams[1].minVal->getInt());
+      maxDir = float(oscParams[1].maxVal->getInt());
+    }
     windDir = moyenne_glissante(wind_vane_for_mean, wind_vane_size_mean, windDir);
     if(windDir != oldWindDir){
       oldWindDir = windDir;
-      windDir = windDir / 360.0;
+      windDir = (windDir - minDir) / (maxDir - minDir);
+      windDir = ((int) (windDir * 100)) / 100.0;
       // Serial.print("Wind dir: ");
       // Serial.println(windDir);
       sendData(1, windDir);
@@ -161,5 +167,6 @@ void loop(){
   windDirTot += windDirNow;
   windDirCount++;
   windDirPrev = windDirNow;
+
   delay(50);
 }

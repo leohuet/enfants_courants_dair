@@ -4,6 +4,7 @@
 #define BATT_PIN GPIO_NUM_7
 #define ANEMOMETER_PIN GPIO_NUM_4
 #define WIND_VANE_PIN GPIO_NUM_5
+#define WIND_SENS_PIN GPIO_NUM_6
 #define LED_R_PIN GPIO_NUM_1
 #define LED_G_PIN GPIO_NUM_2
 #define LED_B_PIN GPIO_NUM_3
@@ -40,13 +41,12 @@ PersistentValue* onBattery;
 PersistentValue* ipAddress;
 PersistentValue* madPort;
 
-PersistentValue* inactivityTimer;
 PersistentValue* readingFrequency;
 
 uint32_t lastReading = 0;
 uint32_t lastTest = 0;
 bool toWakeup = false;
-
+extern bool espUiOn;
 
 // UDP pour les messages OSC
 WiFiUDP wifiUdp;
@@ -55,7 +55,6 @@ String baseIP = "192.168.68.100";
 uint16_t madPortValue = 9001;
 bool onEthernetBool = false;
 bool onBatteryBool = false;
-bool espUiOn = true;
 
 
 // ====== SETUP UI ======
@@ -64,14 +63,14 @@ void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
     ESPUI.addControl(ControlType::Separator, baseOscParams[i].name.c_str(), baseOscParams[i].name.c_str(), ControlColor::Turquoise, tabId);
     String label = baseOscParams[i].name;
     oscParams[i].address = new PersistentValue(label + "_address", ControlColor::Peterriver, baseOscParams[i].address, tabId);
-    oscParams[i].minVal = new PersistentValue(label + "_min (%)", ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
-    oscParams[i].maxVal = new PersistentValue(label + "_max (%)", ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].minVal = new PersistentValue(label + "_min", ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].maxVal = new PersistentValue(label + "_max", ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
     oscParams[i].sendToMad = new PersistentValue(label + "_mad", ControlColor::Alizarin, baseOscParams[i].sendToMad, tabId);
     oscParams[i].testOn = new PersistentValue(label + "_test", ControlColor::Alizarin, baseOscParams[i].testOn, tabId);
   }
 }
 
-void setupUI() {
+void setupUI(uint8_t numControl) {
   uint16_t generalTab = ESPUI.addControl(ControlType::Tab, "Settings", "Settings");
   uint16_t oscTabs[] = {
     ESPUI.addControl(ControlType::Tab, "OSC tab", "OSC tab"),
@@ -85,12 +84,11 @@ void setupUI() {
   ipAddress = new PersistentValue("IP destination", ControlColor::Peterriver, baseIP, generalTab);
   madPort = new PersistentValue("mad port", ControlColor::Wetasphalt, 9001, 1000, 12000, generalTab);
   ESPUI.addControl(ControlType::Separator, "Data controls", "", ControlColor::None, generalTab);  
-  readingFrequency = new PersistentValue("Reading frequency (in ms)", ControlColor::Wetasphalt, 2000, 1000, 5000, generalTab);
-  inactivityTimer = new PersistentValue("inactivity timer (in ms)", ControlColor::Wetasphalt, 2000, 500, 10000, generalTab);
+  readingFrequency = new PersistentValue("Reading frequency (in ms)", ControlColor::Wetasphalt, 1000, 50, 5000, generalTab);
 
   // osc tabs
   // for each parameter, display controls for address, min & max, toggle for Touch/Ableton send and test button
-  addOscControls(0, 2, oscTabs[0]);
+  addOscControls(0, numControl, oscTabs[0]);
 }
 
 

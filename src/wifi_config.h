@@ -138,6 +138,13 @@ bool begin_ethernet(){
       }
     }
     else if(Ethernet.linkStatus() == LinkON) break;
+    else{
+      Serial.println("No Ethernet module found");
+      if(millis() - startEthernet > 5000){
+        return false;
+        break;
+      }
+    }
   }
   if(Ethernet.begin(mac) != 0){
     Serial.print("DHCP assigned IP: ");

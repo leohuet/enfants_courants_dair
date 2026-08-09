@@ -11,54 +11,64 @@
 #include "persistentValue.h"
 #include "define_functions.h"
 
-#define NUM_PARAMS 2
+#define NUM_PARAMS 1
 
 
 OSCParam oscParams[NUM_PARAMS];
 
 baseOSCParam baseOscParams[] = {
-  {"1_wind_speed", "/1/wind_speed", 0, 100, true, false}
+  {"1_wind_speed_%", "/1/wind_speed", 0, 100, true, false}
 };
 
 
 const uint8_t size_mean = 4;
 uint16_t value_for_mean[size_mean];
 
-float data = 0.0;
-float old_data = 0.0;
+float windData = 0.0;
+float windOldData = 0.0;
 
+bool espUiOn = true;
 
 void setup(){
-  // open serial for USB and radar UART
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(VBUS_SENSE_PIN, INPUT);
   pinMode(BATT_PIN, INPUT);
+  pinMode(WIND_SENS_PIN, INPUT);
   pinMode(LED_R_PIN, OUTPUT);
   pinMode(LED_G_PIN, OUTPUT);
   pinMode(LED_B_PIN, OUTPUT);
-  pinMode(D5, INPUT);
   delay(2000);
-  begin_wifi();
+  onEthernetBool = begin_ethernet();
   delay(2000);
+  if(onEthernetBool) ethUdp.begin(8888);
+  else begin_wifi();
 
   if(espUiOn){
     // ESPUI control init
     ESPUI.begin("Les enfants des courants d'air");
-    setupUI();
+    setupUI(1);
+    delay(2000);
+    onBatteryBool = onBattery->getBool();
+  }
+
+  if(onBatteryBool){
+    xTaskCreatePinnedToCore(
+      vbusWatcherTask,   // task function
+      "vbusWatcher",     // name
+      2048,              // stack size (bytes)
+      NULL,              // parameters
+      1,                 // priority (low is fine here)
+      NULL,              // task handle (not needed)
+      0                  // core to pin to (0 or 1)
+    );
+  }
+  else{
+    digitalWrite(LED_R_PIN, LOW);
+    digitalWrite(LED_G_PIN, LOW);
+    digitalWrite(LED_B_PIN, HIGH);
   }
   
-  delay(2000);
-  xTaskCreatePinnedToCore(
-    vbusWatcherTask,   // task function
-    "vbusWatcher",     // name
-    2048,              // stack size (bytes)
-    NULL,              // parameters
-    1,                 // priority (low is fine here)
-    NULL,              // task handle (not needed)
-    0                  // core to pin to (0 or 1)
-  );
-
   Serial.println("Starting programm..");
 }
 
@@ -73,12 +83,19 @@ void loop(){
   
   if((millis() - lastReading) > readingFreq && started){
     lastReading = millis();
-    data = analogRead(D5);
-    data = moyenne_glissante(value_for_mean, size_mean, data) / 3500.0;
-    if(data != old_data && data >= 0.10){
-      data = data - 0.10;
-      old_data = data;
-      sendData(0, data);
+    windData = analogRead(WIND_SENS_PIN);
+    windData = moyenne_glissante(value_for_mean, size_mean, windData) / 3500.0;
+    float minSpeed = 0.0;
+    float maxSpeed = 1.0;
+    if(espUiOn){
+      minSpeed = float(oscParams[0].minVal->getInt()) / 100.0;
+      maxSpeed = float(oscParams[0].maxVal->getInt()) / 100.0;
+    }
+    if(windData != windOldData && windData >= minSpeed){
+      windOldData = windData;
+      windData = (windData - minSpeed) / (maxSpeed - minSpeed);
+      windData = ((int) (windData * 100)) / 100.0;
+      sendData(0, windData);
     }
   }
   delay(20);
