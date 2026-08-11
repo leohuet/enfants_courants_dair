@@ -1,8 +1,9 @@
 #include "Arduino.h"
 
 #include <ESPUI.h>
-#include <WiFi.h>
+
 #include <WiFiUdp.h>
+#include <EthernetUdp.h>
 #include <OSCMessage.h>
 
 #include "driver/rtc_io.h"
@@ -11,6 +12,8 @@
 #include "persistentValue.h"
 #include "define_functions.h"
 
+
+#define WIND_SENS_PIN GPIO_NUM_6
 #define NUM_PARAMS 1
 
 
@@ -38,6 +41,8 @@ void setup(){
   pinMode(LED_G_PIN, OUTPUT);
   pinMode(LED_B_PIN, OUTPUT);
   delay(2000);
+  w5500PowerUp();
+  delay(1000);
   onEthernetBool = begin_ethernet();
   delay(2000);
   if(onEthernetBool) ethUdp.begin(8888);
@@ -91,7 +96,7 @@ void loop(){
       }
     }
   }
-  
+
   if((now - lastReading) > readingFreq && started){
     lastReading = millis();
     windData = analogRead(WIND_SENS_PIN);

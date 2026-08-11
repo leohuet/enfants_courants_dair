@@ -1,17 +1,17 @@
 #include "Arduino.h"
+#include "utility/w5100.h"
 
 #define VBUS_SENSE_PIN GPIO_NUM_9
 #define BATT_PIN GPIO_NUM_7
-#define ANEMOMETER_PIN GPIO_NUM_4
-#define WIND_VANE_PIN GPIO_NUM_5
-#define WIND_SENS_PIN GPIO_NUM_6
 #define LED_R_PIN GPIO_NUM_1
 #define LED_G_PIN GPIO_NUM_2
 #define LED_B_PIN GPIO_NUM_3
-#define COMPASS_DIRECTIONS 16
 #define VSENSE_THRESHOLD 2500
 #define SLEEP_TIME 900
 #define uS_TO_S_FACTOR 1000000ULL
+
+#define PHYCFGR_POWERDOWN   0xD8
+#define PHYCFGR_NORMAL      0xF8
 
 // Struct for OSC parameters corresponding to each data
 struct OSCParam {
@@ -119,15 +119,24 @@ float moyenne_glissante(float data_array[], uint8_t size, float data){
 	return somme/size;
 }
 
+
+void w5500PowerDown() {
+  W5100.writePHYCFGR_W5500(PHYCFGR_POWERDOWN);
+}
+
+void w5500PowerUp() {
+  W5100.writePHYCFGR_W5500(PHYCFGR_NORMAL);
+}
+
 void displayBatteryCapacity(){
   int battRaw = analogRead(BATT_PIN);
   float battVoltage = (battRaw / 2430.0) * 4.13;
-  if (battVoltage <= 3.7){
+  if (battVoltage <= 3.85){
     digitalWrite(LED_R_PIN, HIGH);
     digitalWrite(LED_G_PIN, LOW);
     digitalWrite(LED_B_PIN, LOW);
   }
-  else if (battVoltage > 3.7 && battVoltage <= 4){
+  else if (battVoltage > 3.85 && battVoltage <= 4){
     digitalWrite(LED_R_PIN, LOW);
     digitalWrite(LED_G_PIN, HIGH);
     digitalWrite(LED_B_PIN, LOW);
@@ -145,21 +154,28 @@ void vbusWatcherTask(void *pvParameters) {
     displayBatteryCapacity();
     if(analogRead(VBUS_SENSE_PIN) > VSENSE_THRESHOLD){
       // USB just got plugged in while we were running — go to sleep
-      Serial.println("USB plugged in, going to sleep");
       toWakeup = true;
       digitalWrite(LED_BUILTIN, HIGH);
       Serial.flush();
       WiFi.mode(WIFI_OFF);
+      if(onEthernetBool){
+        ethUdp.stop();
+        w5500PowerDown();
+      }
       esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_SENSE_PIN, 0);
       esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
       esp_light_sleep_start();
     }
     else if(analogRead(VBUS_SENSE_PIN) < VSENSE_THRESHOLD && toWakeup){
       // USB is not plugged in, keep running
-      Serial.println("USB unplugged, trying to reconnect..");
       toWakeup = false;
       rtc_gpio_deinit(VBUS_SENSE_PIN);
-      if(onEthernetBool) begin_ethernet();
+      if(onEthernetBool){
+        w5500PowerUp();
+        begin_ethernet();
+        delay(2000);
+        ethUdp.begin(8888);
+      }
       else{
         WiFi.mode(WIFI_STA);
         begin_wifi();

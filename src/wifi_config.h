@@ -1,17 +1,20 @@
 #include <Arduino.h>
-// Network stack
 #include <SPI.h>
+
 #include <WiFi.h>
 #include <Ethernet.h>
+
 #include <ArduinoOTA.h>
+
 #ifndef HOST
 #define HOST "ESP_ROMAIN"
 #endif
-#include <WiFiUdp.h>
-#include <OSCMessage.h>
+
 #include "credentials.h"
 
+
 #define ETH_CS_PIN GPIO_NUM_44
+
 #define nLOG(message) udp.broadcastTo((String("\n") + String(message)).c_str(), 1234) // listen with `nc -kluvw 0 1234`
 // listen with `nc -kluvw 0 1234`*/
 

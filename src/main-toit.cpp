@@ -1,7 +1,7 @@
 #include "Arduino.h"
 
 #include <ESPUI.h>
-#include <WiFi.h>
+
 #include <WiFiUdp.h>
 #include <EthernetUdp.h>
 #include <OSCMessage.h>
@@ -13,17 +13,12 @@
 #include "persistentValue.h"
 #include "define_functions.h"
 
-#define NUM_PARAMS 2
-#define VBUS_SENSE_PIN GPIO_NUM_9
-#define BATT_PIN GPIO_NUM_7
+
 #define ANEMOMETER_PIN GPIO_NUM_4
 #define WIND_VANE_PIN GPIO_NUM_5
 #define COMPASS_DIRECTIONS 16
-#define VSENSE_THRESHOLD 2500
-#define SLEEP_TIME 900
-#define uS_TO_S_FACTOR 1000000ULL
 #define SAMPLE_INTERVAL_MS 1500UL
-
+#define NUM_PARAMS 2
 
 OSCParam oscParams[NUM_PARAMS];
 
@@ -66,6 +61,8 @@ void setup(){
   pinMode(LED_B_PIN, OUTPUT);
   attachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN), readAnemometer, FALLING);
   delay(2000);
+  w5500PowerUp();
+  delay(1000);
   onEthernetBool = begin_ethernet();
   delay(2000);
   if(onEthernetBool) ethUdp.begin(8888);
