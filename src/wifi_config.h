@@ -111,7 +111,7 @@ void begin_wifi(){
       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
-  ArduinoOTA.begin(false);
+  ArduinoOTA.begin();
 
   xTaskCreatePinnedToCore(
         wifi_OTA,     // Function that should be called
@@ -180,7 +180,7 @@ bool begin_ethernet(){
       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
-  ArduinoOTA.begin(true);
+  ArduinoOTA.begin();
 
   xTaskCreatePinnedToCore(
         ethernet_OTA,     // Function that should be called
