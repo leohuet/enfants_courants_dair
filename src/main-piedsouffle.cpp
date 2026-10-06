@@ -20,14 +20,15 @@
 OSCParam oscParams[NUM_PARAMS];
 
 baseOSCParam baseOscParams[] = {
-  {"1_wind_speed", "%", "/1/wind_speed", 0, 100, true, false}
+  {"1_wind_speed", "%", "/1/wind_speed", 0, 100, 5, 0, 0, 0, true, false}
 };
 
-const uint8_t size_mean = 4;
-uint16_t value_for_mean[size_mean];
+uint8_t size_mean = 5;
+uint16_t value_for_mean[MAX_MEAN_SIZE];
 
 float windData = 0.0;
 float windOldData = 0.0;
+int oldWindNoise = 0;
 
 bool espUiOn = true;
 
@@ -43,10 +44,10 @@ void setup(){
   delay(2000);
   w5500PowerUp();
   delay(1000);
-  onEthernetBool = begin_ethernet();
+  onEthernetBool = begin_ethernet(LED_R_PIN);
   delay(2000);
   if(onEthernetBool) ethUdp.begin(8888);
-  else begin_wifi();
+  else begin_wifi(LED_R_PIN);
 
   if(espUiOn){
     // ESPUI control init
@@ -55,6 +56,15 @@ void setup(){
     delay(2000);
     onBatteryBool = onBattery->getBool();
   }
+
+  digitalWrite(LED_R_PIN, HIGH);
+  digitalWrite(LED_G_PIN, LOW);
+  digitalWrite(LED_B_PIN, LOW);
+  delay(500);
+  digitalWrite(LED_R_PIN, LOW);
+  digitalWrite(LED_G_PIN, HIGH);
+  digitalWrite(LED_B_PIN, LOW);
+  delay(500);
 
   if(onBatteryBool){
     xTaskCreatePinnedToCore(
@@ -71,6 +81,10 @@ void setup(){
     digitalWrite(LED_R_PIN, LOW);
     digitalWrite(LED_G_PIN, LOW);
     digitalWrite(LED_B_PIN, HIGH);
+  }
+
+  if(espUiOn){
+    size_mean = oscParams[0].sizeMean->getInt();
   }
   
   Serial.println("Starting programm..");
@@ -99,18 +113,26 @@ void loop(){
 
   if((now - lastReading) > readingFreq && started){
     lastReading = millis();
-    windData = analogRead(WIND_SENS_PIN);
-    windData = moyenne_glissante(value_for_mean, size_mean, windData) / 3500.0;
     float minSpeed = 0.0;
     float maxSpeed = 1.0;
+    uint8_t noiseAmount = 0;
+    uint8_t noiseAmplitude = 0;
+    uint8_t noiseMax = 0;
     if(espUiOn){
       minSpeed = float(oscParams[0].minVal->getInt()) / 100.0;
       maxSpeed = float(oscParams[0].maxVal->getInt()) / 100.0;
+      noiseAmount = oscParams[0].noiseAmount->getInt();
+      noiseAmplitude = oscParams[0].noiseAmplitude->getInt();
+      noiseMax = oscParams[0].noiseMax->getInt();
     }
+    float wind_noise = noise_random(oldWindNoise, noiseAmount, noiseAmplitude, noiseMax);
+    oldWindNoise = wind_noise;
+    windData = analogRead(WIND_SENS_PIN);
+    windData = moyenne_glissante(value_for_mean, size_mean, windData) / 3500.0;
     if(windData != windOldData && windData >= minSpeed){
       windOldData = windData;
       windData = (windData - minSpeed) / (maxSpeed - minSpeed);
-      windData = ((int) (windData * 100)) / 100.0;
+      windData = ((int) (windData * 100 + wind_noise)) / 100.0;
       sendData(0, windData);
     }
   }

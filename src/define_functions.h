@@ -9,6 +9,7 @@
 #define VSENSE_THRESHOLD 2500
 #define SLEEP_TIME 900
 #define uS_TO_S_FACTOR 1000000ULL
+#define MAX_MEAN_SIZE 100
 
 #define PHYCFGR_POWERDOWN   0xD8
 #define PHYCFGR_NORMAL      0xF8
@@ -19,7 +20,11 @@ struct OSCParam {
   PersistentValue* address;
   PersistentValue* minVal;
   PersistentValue* maxVal;
-  PersistentValue* sendToMad;
+  PersistentValue* sizeMean;
+  PersistentValue* noiseAmount;
+  PersistentValue* noiseAmplitude;
+  PersistentValue* noiseMax;
+  PersistentValue* send;
   PersistentValue* testOn;
 };
 extern OSCParam oscParams[];
@@ -30,7 +35,11 @@ struct baseOSCParam {
   String address;
   uint16_t minVal;
   uint16_t maxVal;
-  bool sendToMad;
+  uint8_t sizeMean;
+  uint8_t noiseAmount;
+  uint8_t noiseAmplitude;
+  uint8_t noiseMax;
+  bool send;
   bool testOn;
 };
 extern baseOSCParam baseOscParams[];
@@ -41,6 +50,7 @@ PersistentValue* onBattery;
 
 PersistentValue* ipAddress;
 PersistentValue* madPort;
+PersistentValue* maxPort;
 
 PersistentValue* readingFrequency;
 
@@ -55,6 +65,7 @@ WiFiUDP wifiUdp;
 EthernetUDP ethUdp;
 String baseIP = "192.168.68.100";
 uint16_t madPortValue = 9001;
+uint16_t maxPortValue = 8001;
 bool onEthernetBool = false;
 bool onBatteryBool = false;
 
@@ -64,12 +75,17 @@ void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
   for (int i = startIdx; i < endIdx; i++) {
     ESPUI.addControl(ControlType::Separator, baseOscParams[i].name.c_str(), baseOscParams[i].name.c_str(), ControlColor::Turquoise, tabId);
     String label = baseOscParams[i].name;
+    String short_label = baseOscParams[i].name.substring(5);
     String type = baseOscParams[i].dataType;
     oscParams[i].address = new PersistentValue(label + "_address", ControlColor::Peterriver, baseOscParams[i].address, tabId);
-    oscParams[i].minVal = new PersistentValue(label + "_min_" + type, ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
-    oscParams[i].maxVal = new PersistentValue(label + "_max_" + type, ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
-    oscParams[i].sendToMad = new PersistentValue(label + "_mad", ControlColor::Alizarin, baseOscParams[i].sendToMad, tabId);
-    oscParams[i].testOn = new PersistentValue(label + "_test", ControlColor::Alizarin, baseOscParams[i].testOn, tabId);
+    oscParams[i].minVal = new PersistentValue(short_label + "_min", ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].maxVal = new PersistentValue(short_label + "_max", ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].sizeMean = new PersistentValue(short_label + "_size_mean", ControlColor::Wetasphalt, 10, 1, 100, tabId);
+    oscParams[i].noiseAmount = new PersistentValue(short_label + "_noise_amount", ControlColor::Emerald, baseOscParams[i].noiseAmount, 0, 100, tabId);
+    oscParams[i].noiseAmplitude = new PersistentValue(short_label + "_noise_amplitude", ControlColor::Emerald, baseOscParams[i].noiseAmplitude, 0, 100, tabId);
+    oscParams[i].noiseMax = new PersistentValue(short_label + "_noise_max", ControlColor::Emerald, baseOscParams[i].noiseMax, 0, 100, tabId);
+    oscParams[i].send = new PersistentValue(short_label + "_send", ControlColor::Alizarin, baseOscParams[i].send, tabId);
+    oscParams[i].testOn = new PersistentValue(short_label + "_test", ControlColor::Alizarin, baseOscParams[i].testOn, tabId);
   }
 }
 
@@ -83,9 +99,13 @@ void setupUI(uint8_t numControl) {
   ESPUI.addControl(ControlType::Separator, "Global controls", "", ControlColor::None, generalTab);
   isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
   onBattery = new PersistentValue("On battery", ControlColor::Alizarin, false, generalTab);
+  uint16_t rebootButton = ESPUI.button("Reboot", [](Control *sender, int eventname) {
+    ESP.restart();
+  }, ControlColor::Alizarin);
   ESPUI.addControl(ControlType::Separator, "Network", "", ControlColor::None, generalTab);
   ipAddress = new PersistentValue("IP destination", ControlColor::Peterriver, baseIP, generalTab);
   madPort = new PersistentValue("mad port", ControlColor::Wetasphalt, 9001, 1000, 12000, generalTab);
+  maxPort = new PersistentValue("max port", ControlColor::Wetasphalt, 8001, 1000, 12000, generalTab);
   ESPUI.addControl(ControlType::Separator, "Data controls", "", ControlColor::None, generalTab);  
   readingFrequency = new PersistentValue("Reading frequency (in ms)", ControlColor::Wetasphalt, 1000, 50, 5000, generalTab);
 
@@ -117,6 +137,21 @@ float moyenne_glissante(float data_array[], uint8_t size, float data){
 	data_array[size-1] = data;
 	somme += data_array[size-1];
 	return somme/size;
+}
+
+int noise_random(uint8_t old_noise, uint8_t noise_amount, uint8_t noise_amplitude, uint8_t noise_max){
+  // add random noise to the data, based on the noise amount and amplitude defined in the ESPUI controls
+  if (noise_amount > 0 && noise_amplitude > 0){
+    int random_value = random(-noise_amplitude, noise_amplitude);
+    int random_chance = random(0, 100);
+    if (old_noise + random_value > noise_max) random_value = -random_value;
+    if (old_noise + random_value < 0) random_value = -random_value;
+    if (random_chance < noise_amount){
+      return old_noise + random_value;
+    }
+    return old_noise;
+  }
+  return 0;
 }
 
 
@@ -172,13 +207,13 @@ void vbusWatcherTask(void *pvParameters) {
       rtc_gpio_deinit(VBUS_SENSE_PIN);
       if(onEthernetBool){
         w5500PowerUp();
-        begin_ethernet();
+        begin_ethernet(LED_R_PIN);
         delay(2000);
         ethUdp.begin(8888);
       }
       else{
         WiFi.mode(WIFI_STA);
-        begin_wifi();
+        begin_wifi(LED_R_PIN);
       }
     }
     vTaskDelay(pdMS_TO_TICKS(1000)); // check once a second
@@ -191,24 +226,31 @@ void sendData(uint8_t index, float value){
   IPAddress outIP;
   outIP.fromString(baseIP);
   String address = baseOscParams[index].address;
-  bool toMad = baseOscParams[index].sendToMad;
+  bool toSend = baseOscParams[index].send;
   if(espUiOn){
     outIP.fromString(ipAddress->getString());
     address = oscParams[index].address->getString();
-    toMad = oscParams[index].sendToMad->getBool();
+    toSend = oscParams[index].send->getBool();
     madPortValue = madPort->getInt();
+    maxPortValue = maxPort->getInt();
   }
-  if(!toMad){ return;}
+  if(!toSend){ return;}
   OSCMessage msg(address.c_str());
   msg.add(value);
   if(onEthernetBool){
     ethUdp.beginPacket(outIP, madPortValue);
     msg.send(ethUdp);
     ethUdp.endPacket();
+    ethUdp.beginPacket(outIP, maxPortValue);
+    msg.send(ethUdp);
+    ethUdp.endPacket();
     msg.empty();
   }
   else{
     wifiUdp.beginPacket(outIP, madPortValue);
+    msg.send(wifiUdp);
+    wifiUdp.endPacket();
+    wifiUdp.beginPacket(outIP, maxPortValue);
     msg.send(wifiUdp);
     wifiUdp.endPacket();
     msg.empty();
@@ -226,6 +268,7 @@ void testSend(uint8_t index){
     outIP.fromString(ipAddress->getString());
     address = oscParams[index].address->getString();
     madPortValue = madPort->getInt();
+    maxPortValue = maxPort->getInt();
   }
   OSCMessage msg(address.c_str());
   msg.add(test);
@@ -233,10 +276,16 @@ void testSend(uint8_t index){
     ethUdp.beginPacket(outIP, madPortValue);
     msg.send(ethUdp);
     ethUdp.endPacket();
+    ethUdp.beginPacket(outIP, maxPortValue);
+    msg.send(ethUdp);
+    ethUdp.endPacket();
     msg.empty();
   }
   else{
     wifiUdp.beginPacket(outIP, madPortValue);
+    msg.send(wifiUdp);
+    wifiUdp.endPacket();
+    wifiUdp.beginPacket(outIP, maxPortValue);
     msg.send(wifiUdp);
     wifiUdp.endPacket();
     msg.empty();

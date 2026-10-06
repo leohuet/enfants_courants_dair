@@ -50,7 +50,7 @@ void wifi_OTA(void * _){
 }
 
 
-void begin_wifi(){
+void begin_wifi(gpio_num_t led_pin){
   // build and set hostname
   uint64_t mac = ESP.getEfuseMac();
   uint64_t reversed_mac = 0;
@@ -76,11 +76,11 @@ void begin_wifi(){
   Serial.print("Connecting");
   while (WiFi.status() != WL_CONNECTED) {
     digitalWrite(LED_BUILTIN, LOW);
-    digitalWrite(D0, LOW);
+    digitalWrite(led_pin, LOW);
     delay(250);
     Serial.print(".");
     digitalWrite(LED_BUILTIN, HIGH);
-    digitalWrite(D0, HIGH);
+    digitalWrite(led_pin, HIGH);
     delay(250);
   }
   Serial.println("");
@@ -128,7 +128,7 @@ void begin_wifi(){
 }
 
 
-bool begin_ethernet(){
+bool begin_ethernet(gpio_num_t led_pin){
   // Ethernet
   Ethernet.init(ETH_CS_PIN);
   WiFi.mode(WIFI_OFF);
@@ -137,11 +137,11 @@ bool begin_ethernet(){
   unsigned long startEthernet = millis();
   while(true){
     digitalWrite(LED_BUILTIN, LOW);
-    digitalWrite(D0, LOW);
+    digitalWrite(led_pin, LOW);
     delay(250);
     Serial.print(".");
     digitalWrite(LED_BUILTIN, HIGH);
-    digitalWrite(D0, HIGH);
+    digitalWrite(led_pin, HIGH);
     delay(250);
     if (Ethernet.linkStatus() == LinkOFF) {
       Serial.println("Ethernet cable is not connected.");
