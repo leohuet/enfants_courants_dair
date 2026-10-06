@@ -78,8 +78,8 @@ void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
     String short_label = baseOscParams[i].name.substring(5);
     String type = baseOscParams[i].dataType;
     oscParams[i].address = new PersistentValue(label + "_address", ControlColor::Peterriver, baseOscParams[i].address, tabId);
-    oscParams[i].minVal = new PersistentValue(short_label + "_min", ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
-    oscParams[i].maxVal = new PersistentValue(short_label + "_max", ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].minVal = new PersistentValue(short_label + "_min_" + type, ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
+    oscParams[i].maxVal = new PersistentValue(short_label + "_max_" + type, ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
     oscParams[i].sizeMean = new PersistentValue(short_label + "_size_mean", ControlColor::Wetasphalt, 10, 1, 100, tabId);
     oscParams[i].noiseAmount = new PersistentValue(short_label + "_noise_amount", ControlColor::Emerald, baseOscParams[i].noiseAmount, 0, 100, tabId);
     oscParams[i].noiseAmplitude = new PersistentValue(short_label + "_noise_amplitude", ControlColor::Emerald, baseOscParams[i].noiseAmplitude, 0, 100, tabId);
