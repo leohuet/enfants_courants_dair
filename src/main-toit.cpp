@@ -62,8 +62,11 @@ void setup(){
   pinMode(LED_R_PIN, OUTPUT);
   pinMode(LED_G_PIN, OUTPUT);
   pinMode(LED_B_PIN, OUTPUT);
+  digitalWrite(LED_R_PIN, LOW);
+  digitalWrite(LED_G_PIN, LOW);
+  digitalWrite(LED_B_PIN, LOW);
   attachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN), readAnemometer, FALLING);
-  randomSeed(analogRead(GPIO_NUM_1));
+  randomSeed(analogRead(GPIO_NUM_44));
   delay(2000);
   w5500PowerUp();
   delay(1000);

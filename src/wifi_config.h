@@ -50,7 +50,7 @@ void wifi_OTA(void * _){
 }
 
 
-void begin_wifi(gpio_num_t led_pin){
+void begin_wifi(gpio_num_t led_pin, String ipAddress){
   // build and set hostname
   uint64_t mac = ESP.getEfuseMac();
   uint64_t reversed_mac = 0;
@@ -60,7 +60,7 @@ void begin_wifi(gpio_num_t led_pin){
 
   Serial.print("MAC address: ");
   Serial.println(reversed_mac, HEX);
-
+  IPAddress hostIP;
   snprintf(host, 22, (String("ESP_") + String(HOST) + String("_%llX")).c_str(), reversed_mac);
   // strcpy(host, "ESP32_OTA_TEST");
 
@@ -69,7 +69,7 @@ void begin_wifi(gpio_num_t led_pin){
   WiFi.setSleep(false);
   // WiFi.setTxPower(WIFI_POWER_8_5dBm);
   // WiFi.config(IPAddress(10, 241, 229, 250), IPAddress(10, 241, 229, 1), IPAddress(10, 241, 229, 1), IPAddress(255, 255, 255, 0));
-  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  WiFi.config(hostIP.fromString(ipAddress), INADDR_NONE, INADDR_NONE, INADDR_NONE);
   // WiFi.setHostname(host); //define hostname
   // WiFi.disconnect(false,true);
   WiFi.begin(WIFI_NAME, PASSWORD);

@@ -13,7 +13,7 @@
 #include "define_functions.h"
 
 
-#define WIND_SENS_PIN GPIO_NUM_6
+#define WIND_SENS_PIN GPIO_NUM_4
 #define NUM_PARAMS 1
 
 
@@ -41,13 +41,17 @@ void setup(){
   pinMode(LED_R_PIN, OUTPUT);
   pinMode(LED_G_PIN, OUTPUT);
   pinMode(LED_B_PIN, OUTPUT);
+  digitalWrite(LED_R_PIN, LOW);
+  digitalWrite(LED_G_PIN, LOW);
+  digitalWrite(LED_B_PIN, LOW);
+  randomSeed(analogRead(GPIO_NUM_44));
   delay(2000);
   w5500PowerUp();
   delay(1000);
-  onEthernetBool = begin_ethernet(LED_R_PIN);
+  onEthernetBool = begin_ethernet(LED_R_PIN, ipAddressHost->getString());
   delay(2000);
   if(onEthernetBool) ethUdp.begin(8888);
-  else begin_wifi(LED_R_PIN);
+  else begin_wifi(LED_R_PIN, ipAddressHost->getString());
 
   if(espUiOn){
     // ESPUI control init
@@ -128,10 +132,11 @@ void loop(){
     float wind_noise = noise_random(oldWindNoise, noiseAmount, noiseAmplitude, noiseMax);
     oldWindNoise = wind_noise;
     windData = analogRead(WIND_SENS_PIN);
-    windData = moyenne_glissante(value_for_mean, size_mean, windData) / 3500.0;
+    windData = moyenne_glissante(value_for_mean, size_mean, windData) / 2000.0;
     if(windData != windOldData && windData >= minSpeed){
       windOldData = windData;
       windData = (windData - minSpeed) / (maxSpeed - minSpeed);
+      if(windData > maxSpeed) windData = maxSpeed;
       windData = ((int) (windData * 100 + wind_noise)) / 100.0;
       sendData(0, windData);
     }

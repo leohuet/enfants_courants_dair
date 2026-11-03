@@ -1,16 +1,17 @@
 #include "Arduino.h"
 #include "utility/w5100.h"
+#include <DallasTemperature.h>
 
-#define VBUS_SENSE_PIN GPIO_NUM_9
-#define BATT_PIN GPIO_NUM_7
-#define LED_R_PIN GPIO_NUM_1
-#define LED_G_PIN GPIO_NUM_2
-#define LED_B_PIN GPIO_NUM_3
+#define VBUS_SENSE_PIN GPIO_NUM_6
+#define BATT_PIN GPIO_NUM_5
+#define LED_R_PIN GPIO_NUM_2
+#define LED_G_PIN GPIO_NUM_3
+#define LED_B_PIN GPIO_NUM_1
 #define VSENSE_THRESHOLD 2500
 #define SLEEP_TIME 900
 #define uS_TO_S_FACTOR 1000000ULL
 #define MAX_MEAN_SIZE 100
-
+#define CHARGER_CONTROL GPIO_NUM_8
 #define PHYCFGR_POWERDOWN   0xD8
 #define PHYCFGR_NORMAL      0xF8
 
@@ -44,11 +45,13 @@ struct baseOSCParam {
 };
 extern baseOSCParam baseOscParams[];
 
-//persistentvalues for ESPUI control values 
+//persistentvalues for ESPUI control values
+PersistentValue* espName;
+PersistentValue* ipAddressHost;
 PersistentValue* isStarted;
 PersistentValue* onBattery;
 
-PersistentValue* ipAddress;
+PersistentValue* ipAddressSend;
 PersistentValue* madPort;
 PersistentValue* maxPort;
 
@@ -63,7 +66,8 @@ extern bool espUiOn;
 // UDP pour les messages OSC
 WiFiUDP wifiUdp;
 EthernetUDP ethUdp;
-String baseIP = "192.168.68.100";
+String baseSendIP = "192.168.68.100";
+String baseHostIP = "192.168.68.101";
 uint16_t madPortValue = 9001;
 uint16_t maxPortValue = 8001;
 bool onEthernetBool = false;
@@ -97,13 +101,15 @@ void setupUI(uint8_t numControl) {
   
   // general tab
   ESPUI.addControl(ControlType::Separator, "Global controls", "", ControlColor::None, generalTab);
+  espName = new PersistentValue("Name", ControlColor::Peterriver, "ESP-OSC", generalTab);
+  ipAddressHost = new PersistentValue("IP host", ControlColor::Peterriver, baseHostIP, generalTab);
   isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
   onBattery = new PersistentValue("On battery", ControlColor::Alizarin, false, generalTab);
   uint16_t rebootButton = ESPUI.button("Reboot", [](Control *sender, int eventname) {
     ESP.restart();
   }, ControlColor::Alizarin);
   ESPUI.addControl(ControlType::Separator, "Network", "", ControlColor::None, generalTab);
-  ipAddress = new PersistentValue("IP destination", ControlColor::Peterriver, baseIP, generalTab);
+  ipAddressSend = new PersistentValue("IP destination", ControlColor::Peterriver, baseSendIP, generalTab);
   madPort = new PersistentValue("mad port", ControlColor::Wetasphalt, 9001, 1000, 12000, generalTab);
   maxPort = new PersistentValue("max port", ControlColor::Wetasphalt, 8001, 1000, 12000, generalTab);
   ESPUI.addControl(ControlType::Separator, "Data controls", "", ControlColor::None, generalTab);  
@@ -183,12 +189,33 @@ void displayBatteryCapacity(){
   }
 }
 
+// void checkTemperature(){
+//   Serial.print("Requesting temperatures...");
+//   sensors.requestTemperatures();
+//   delay(1000);
+//   float tempC = sensors.getTempCByIndex(0);
+//   // Check if reading was successful
+//   if (tempC != DEVICE_DISCONNECTED_C){
+//     Serial.println(tempC);
+//   }
+//   else{
+//     Serial.println("Error: Could not read temperature data");
+//   }
+//   if(tempC > 2){
+//     digitalWrite(CHARGER_CONTROL, HIGH);
+//   }
+//   else{
+//     digitalWrite(CHARGER_CONTROL, LOW);
+//   }
+// }
+
 
 void vbusWatcherTask(void *pvParameters) {
   while(true){
     displayBatteryCapacity();
     if(analogRead(VBUS_SENSE_PIN) > VSENSE_THRESHOLD){
       // USB just got plugged in while we were running — go to sleep
+      // checkTemperature();
       toWakeup = true;
       digitalWrite(LED_BUILTIN, HIGH);
       Serial.flush();
@@ -207,13 +234,13 @@ void vbusWatcherTask(void *pvParameters) {
       rtc_gpio_deinit(VBUS_SENSE_PIN);
       if(onEthernetBool){
         w5500PowerUp();
-        begin_ethernet(LED_R_PIN);
+        begin_ethernet(LED_R_PIN, ipAddressHost->getString());
         delay(2000);
         ethUdp.begin(8888);
       }
       else{
         WiFi.mode(WIFI_STA);
-        begin_wifi(LED_R_PIN);
+        begin_wifi(LED_R_PIN, ipAddressHost->getString());
       }
     }
     vTaskDelay(pdMS_TO_TICKS(1000)); // check once a second
@@ -224,11 +251,11 @@ void vbusWatcherTask(void *pvParameters) {
 void sendData(uint8_t index, float value){
   // only if toggles to send to Ableton and/or Touch are on
   IPAddress outIP;
-  outIP.fromString(baseIP);
+  outIP.fromString(baseSendIP);
   String address = baseOscParams[index].address;
   bool toSend = baseOscParams[index].send;
   if(espUiOn){
-    outIP.fromString(ipAddress->getString());
+    outIP.fromString(ipAddressSend->getString());
     address = oscParams[index].address->getString();
     toSend = oscParams[index].send->getBool();
     madPortValue = madPort->getInt();
@@ -261,11 +288,11 @@ void sendData(uint8_t index, float value){
 // ====== test OSC send function ======
 void testSend(uint8_t index){
   IPAddress outIP;
-  outIP.fromString(baseIP);
+  outIP.fromString(baseSendIP);
   String address = baseOscParams[index].address;
   float test = 0.5;
   if(espUiOn){
-    outIP.fromString(ipAddress->getString());
+    outIP.fromString(ipAddressSend->getString());
     address = oscParams[index].address->getString();
     madPortValue = madPort->getInt();
     maxPortValue = maxPort->getInt();
