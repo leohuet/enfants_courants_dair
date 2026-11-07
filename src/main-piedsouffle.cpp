@@ -47,6 +47,7 @@ void setup(){
   randomSeed(analogRead(GPIO_NUM_44));
   delay(2000);
   w5500PowerUp();
+  setupUI(1);
   delay(1000);
   onEthernetBool = begin_ethernet(LED_R_PIN, ipAddressHost->getString());
   delay(2000);
@@ -56,7 +57,6 @@ void setup(){
   if(espUiOn){
     // ESPUI control init
     ESPUI.begin("Les enfants des courants d'air");
-    setupUI(1);
     delay(2000);
     onBatteryBool = onBattery->getBool();
   }
@@ -132,11 +132,12 @@ void loop(){
     float wind_noise = noise_random(oldWindNoise, noiseAmount, noiseAmplitude, noiseMax);
     oldWindNoise = wind_noise;
     windData = analogRead(WIND_SENS_PIN);
+    Serial.println(windData);
     windData = moyenne_glissante(value_for_mean, size_mean, windData) / 2000.0;
     if(windData != windOldData && windData >= minSpeed){
       windOldData = windData;
-      windData = (windData - minSpeed) / (maxSpeed - minSpeed);
       if(windData > maxSpeed) windData = maxSpeed;
+      windData = (windData - minSpeed) / (maxSpeed - minSpeed);
       windData = ((int) (windData * 100 + wind_noise)) / 100.0;
       sendData(0, windData);
     }

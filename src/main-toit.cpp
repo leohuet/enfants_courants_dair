@@ -69,16 +69,16 @@ void setup(){
   randomSeed(analogRead(GPIO_NUM_44));
   delay(2000);
   w5500PowerUp();
+  setupUI(2);
   delay(1000);
-  onEthernetBool = begin_ethernet(LED_R_PIN);
+  onEthernetBool = begin_ethernet(LED_R_PIN, ipAddressHost->getString());
   delay(2000);
   if(onEthernetBool) ethUdp.begin(8888);
-  else begin_wifi(LED_R_PIN);
+  else begin_wifi(LED_R_PIN, ipAddressHost->getString());
 
   if(espUiOn){
     // ESPUI control init
     ESPUI.begin("Les enfants des courants d'air");
-    setupUI(2);
     delay(2000);
     onBatteryBool = onBattery->getBool();
   }

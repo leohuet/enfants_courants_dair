@@ -66,8 +66,9 @@ extern bool espUiOn;
 // UDP pour les messages OSC
 WiFiUDP wifiUdp;
 EthernetUDP ethUdp;
+String baseName = "borne_ESP_4";
 String baseSendIP = "192.168.68.100";
-String baseHostIP = "192.168.68.101";
+String baseHostIP = "192.168.68.104";
 uint16_t madPortValue = 9001;
 uint16_t maxPortValue = 8001;
 bool onEthernetBool = false;
@@ -99,16 +100,18 @@ void setupUI(uint8_t numControl) {
     ESPUI.addControl(ControlType::Tab, "OSC tab", "OSC tab"),
   };
   
-  // general tab
-  ESPUI.addControl(ControlType::Separator, "Global controls", "", ControlColor::None, generalTab);
-  espName = new PersistentValue("Name", ControlColor::Peterriver, "ESP-OSC", generalTab);
-  ipAddressHost = new PersistentValue("IP host", ControlColor::Peterriver, baseHostIP, generalTab);
-  isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
-  onBattery = new PersistentValue("On battery", ControlColor::Alizarin, false, generalTab);
   uint16_t rebootButton = ESPUI.button("Reboot", [](Control *sender, int eventname) {
     ESP.restart();
   }, ControlColor::Alizarin);
+
+  // general tab
+  ESPUI.addControl(ControlType::Separator, "Global controls", "", ControlColor::None, generalTab);
+  espName = new PersistentValue("Name", ControlColor::Peterriver, baseName, generalTab);
+  isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
+  onBattery = new PersistentValue("On battery", ControlColor::Alizarin, false, generalTab);
+  
   ESPUI.addControl(ControlType::Separator, "Network", "", ControlColor::None, generalTab);
+  ipAddressHost = new PersistentValue("IP host", ControlColor::Peterriver, baseHostIP, generalTab);
   ipAddressSend = new PersistentValue("IP destination", ControlColor::Peterriver, baseSendIP, generalTab);
   madPort = new PersistentValue("mad port", ControlColor::Wetasphalt, 9001, 1000, 12000, generalTab);
   maxPort = new PersistentValue("max port", ControlColor::Wetasphalt, 8001, 1000, 12000, generalTab);
@@ -172,12 +175,12 @@ void w5500PowerUp() {
 void displayBatteryCapacity(){
   int battRaw = analogRead(BATT_PIN);
   float battVoltage = (battRaw / 2430.0) * 4.13;
-  if (battVoltage <= 3.85){
+  if (battVoltage <= 3.75){
     digitalWrite(LED_R_PIN, HIGH);
     digitalWrite(LED_G_PIN, LOW);
     digitalWrite(LED_B_PIN, LOW);
   }
-  else if (battVoltage > 3.85 && battVoltage <= 4){
+  else if (battVoltage > 3.75 && battVoltage <= 4){
     digitalWrite(LED_R_PIN, LOW);
     digitalWrite(LED_G_PIN, HIGH);
     digitalWrite(LED_B_PIN, LOW);
@@ -243,7 +246,7 @@ void vbusWatcherTask(void *pvParameters) {
         begin_wifi(LED_R_PIN, ipAddressHost->getString());
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(1000)); // check once a second
+    vTaskDelay(pdMS_TO_TICKS(10000)); // check once every 10 seconds
   }
 }
 

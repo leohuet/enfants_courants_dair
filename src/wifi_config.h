@@ -26,8 +26,10 @@
 
 char host[22];
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEF };
-IPAddress ip(192, 168, 1, 177);
-IPAddress myDns(192, 168, 1, 1);
+IPAddress hostIP;
+IPAddress gateway(192, 168, 68, 1);
+IPAddress subnet(255, 255, 252, 0);   // your router
+IPAddress dns(192, 168, 68, 1);       // or 8.8.8.8
 
 EthernetClient client;
 
@@ -60,7 +62,6 @@ void begin_wifi(gpio_num_t led_pin, String ipAddress){
 
   Serial.print("MAC address: ");
   Serial.println(reversed_mac, HEX);
-  IPAddress hostIP;
   snprintf(host, 22, (String("ESP_") + String(HOST) + String("_%llX")).c_str(), reversed_mac);
   // strcpy(host, "ESP32_OTA_TEST");
 
@@ -69,8 +70,13 @@ void begin_wifi(gpio_num_t led_pin, String ipAddress){
   WiFi.setSleep(false);
   // WiFi.setTxPower(WIFI_POWER_8_5dBm);
   // WiFi.config(IPAddress(10, 241, 229, 250), IPAddress(10, 241, 229, 1), IPAddress(10, 241, 229, 1), IPAddress(255, 255, 255, 0));
-  WiFi.config(hostIP.fromString(ipAddress), INADDR_NONE, INADDR_NONE, INADDR_NONE);
-  // WiFi.setHostname(host); //define hostname
+  if (!hostIP.fromString(ipAddress)){
+    Serial.println("Invalid IP string");
+  }
+  Serial.println(ipAddress);
+  hostIP.fromString(ipAddress);
+  WiFi.config(hostIP, gateway, subnet, dns);
+  WiFi.setHostname(host); //define hostname 
   // WiFi.disconnect(false,true);
   WiFi.begin(WIFI_NAME, PASSWORD);
   Serial.print("Connecting");
@@ -128,10 +134,10 @@ void begin_wifi(gpio_num_t led_pin, String ipAddress){
 }
 
 
-bool begin_ethernet(gpio_num_t led_pin){
+bool begin_ethernet(gpio_num_t led_pin, String ipAddress){
   // Ethernet
   Ethernet.init(ETH_CS_PIN);
-  WiFi.mode(WIFI_OFF);
+  WiFi.mode(WIFI_OFF); 
   esp_netif_init();
   esp_event_loop_create_default();
   unsigned long startEthernet = millis();
@@ -159,11 +165,14 @@ bool begin_ethernet(gpio_num_t led_pin){
       }
     }
   }
-  if(Ethernet.begin(mac) != 0){
-    Serial.print("DHCP assigned IP: ");
-    Serial.println(Ethernet.localIP());
-  }
-  else Ethernet.begin(mac, ip, myDns);
+  hostIP.fromString(ipAddress);
+  Ethernet.begin(mac, hostIP, dns);
+  Serial.println(Ethernet.localIP());
+  // if(Ethernet.begin(mac) != 0){
+  //   Serial.print("DHCP assigned IP: ");
+  //   Serial.println(Ethernet.localIP());
+  // }
+  // else Ethernet.begin(mac, ip, myDns);
   ArduinoOTA.setMdnsEnabled(false);
   ArduinoOTA.setHostname(host);
   ArduinoOTA.setPassword(OTA_PASS);
