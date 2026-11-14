@@ -12,10 +12,19 @@
 #include "persistentValue.h"
 #include "define_functions.h"
 
+#include <Adafruit_NeoPixel.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 #define WIND_SENS_PIN GPIO_NUM_4
+#define ONE_WIRE_BUS GPIO_NUM_9
 #define NUM_PARAMS 1
 
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+Adafruit_NeoPixel pixels(NUMPIXELS, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 
 OSCParam oscParams[NUM_PARAMS];
 
@@ -34,6 +43,8 @@ bool espUiOn = true;
 
 void setup(){
   Serial.begin(115200);
+  sensors.begin();
+  pixels.begin();
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(VBUS_SENSE_PIN, INPUT);
   pinMode(BATT_PIN, INPUT);
@@ -46,10 +57,12 @@ void setup(){
   digitalWrite(LED_B_PIN, LOW);
   randomSeed(analogRead(GPIO_NUM_44));
   delay(2000);
+  pinMode(CHARGER_CONTROL, OUTPUT);
   w5500PowerUp();
   setupUI(1);
   delay(1000);
-  onEthernetBool = begin_ethernet(LED_R_PIN, ipAddressHost->getString());
+  // onEthernetBool = begin_ethernet(LED_R_PIN, ipAddressHost->getString());
+  onEthernetBool = false;
   delay(2000);
   if(onEthernetBool) ethUdp.begin(8888);
   else begin_wifi(LED_R_PIN, ipAddressHost->getString());
@@ -69,7 +82,16 @@ void setup(){
   digitalWrite(LED_G_PIN, HIGH);
   digitalWrite(LED_B_PIN, LOW);
   delay(500);
-
+  pixels.clear();
+  if(ledActive->getBool()){
+    pixels.setBrightness(ledBrightness->getInt());
+    for(int i=0; i<NUMPIXELS; i++){
+      pixels.setPixelColor(i, pixels.Color(255, 255, 255));
+      pixels.show();
+      delay(100);
+    }
+    // pixels.clear();
+  }
   if(onBatteryBool){
     xTaskCreatePinnedToCore(
       vbusWatcherTask,   // task function
@@ -96,7 +118,6 @@ void setup(){
 
 void loop(){
   int readingFreq = 100;
-  int inactTimer = 1000;
   bool started = true;
   if(espUiOn){
     readingFreq = readingFrequency->getInt();
@@ -132,7 +153,6 @@ void loop(){
     float wind_noise = noise_random(oldWindNoise, noiseAmount, noiseAmplitude, noiseMax);
     oldWindNoise = wind_noise;
     windData = analogRead(WIND_SENS_PIN);
-    Serial.println(windData);
     windData = moyenne_glissante(value_for_mean, size_mean, windData) / 2000.0;
     if(windData != windOldData && windData >= minSpeed){
       windOldData = windData;

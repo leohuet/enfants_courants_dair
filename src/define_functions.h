@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "utility/w5100.h"
 #include <DallasTemperature.h>
+#include <Adafruit_NeoPixel.h>
 
 #define VBUS_SENSE_PIN GPIO_NUM_6
 #define BATT_PIN GPIO_NUM_5
@@ -9,9 +10,12 @@
 #define LED_B_PIN GPIO_NUM_1
 #define VSENSE_THRESHOLD 2500
 #define SLEEP_TIME 900
+#define V_TASK_WAIT 10000
 #define uS_TO_S_FACTOR 1000000ULL
 #define MAX_MEAN_SIZE 100
 #define CHARGER_CONTROL GPIO_NUM_8
+#define LED_STRIP_PIN GPIO_NUM_7
+#define NUMPIXELS 12
 #define PHYCFGR_POWERDOWN   0xD8
 #define PHYCFGR_NORMAL      0xF8
 
@@ -50,6 +54,7 @@ PersistentValue* espName;
 PersistentValue* ipAddressHost;
 PersistentValue* isStarted;
 PersistentValue* onBattery;
+PersistentValue* tempControl;
 
 PersistentValue* ipAddressSend;
 PersistentValue* madPort;
@@ -57,23 +62,30 @@ PersistentValue* maxPort;
 
 PersistentValue* readingFrequency;
 
+PersistentValue* ledActive;
+PersistentValue* ledOnDelay;
+PersistentValue* ledBrightness;
+
 unsigned long now;
 uint32_t lastReading = 0;
 uint32_t lastTest = 0;
 bool toWakeup = false;
 extern bool espUiOn;
+extern DallasTemperature sensors;
+extern Adafruit_NeoPixel pixels;
 
 // UDP pour les messages OSC
 WiFiUDP wifiUdp;
 EthernetUDP ethUdp;
-String baseName = "borne_ESP_4";
+String baseName = "borne_ESP_1";
 String baseSendIP = "192.168.68.100";
-String baseHostIP = "192.168.68.104";
+String baseHostIP = "192.168.68.101";
 uint16_t madPortValue = 9001;
 uint16_t maxPortValue = 8001;
 bool onEthernetBool = false;
 bool onBatteryBool = false;
-
+bool ledOff = true;
+unsigned long ledCounter = 0;
 
 // ====== SETUP UI ======
 void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
@@ -109,6 +121,7 @@ void setupUI(uint8_t numControl) {
   espName = new PersistentValue("Name", ControlColor::Peterriver, baseName, generalTab);
   isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
   onBattery = new PersistentValue("On battery", ControlColor::Alizarin, false, generalTab);
+  tempControl = new PersistentValue("Temperature charge control", ControlColor::Alizarin, true, generalTab);
   
   ESPUI.addControl(ControlType::Separator, "Network", "", ControlColor::None, generalTab);
   ipAddressHost = new PersistentValue("IP host", ControlColor::Peterriver, baseHostIP, generalTab);
@@ -117,7 +130,11 @@ void setupUI(uint8_t numControl) {
   maxPort = new PersistentValue("max port", ControlColor::Wetasphalt, 8001, 1000, 12000, generalTab);
   ESPUI.addControl(ControlType::Separator, "Data controls", "", ControlColor::None, generalTab);  
   readingFrequency = new PersistentValue("Reading frequency (in ms)", ControlColor::Wetasphalt, 1000, 50, 5000, generalTab);
+  ESPUI.addControl(ControlType::Separator, "LED Strip", "", ControlColor::None, generalTab);
 
+  ledActive = new PersistentValue("LEDStrip active", ControlColor::Wetasphalt, true, generalTab);
+  ledOnDelay = new PersistentValue("LEDStrip on delay (in hours)", ControlColor::Wetasphalt, 1, 0, 20, generalTab);
+  ledBrightness = new PersistentValue("LEDStrip brightness", ControlColor::Wetasphalt, 128, 0, 255, generalTab);
   // osc tabs
   // for each parameter, display controls for address, min & max, toggle for Touch/Ableton send and test button
   addOscControls(0, numControl, oscTabs[0]);
@@ -192,33 +209,42 @@ void displayBatteryCapacity(){
   }
 }
 
-// void checkTemperature(){
-//   Serial.print("Requesting temperatures...");
-//   sensors.requestTemperatures();
-//   delay(1000);
-//   float tempC = sensors.getTempCByIndex(0);
-//   // Check if reading was successful
-//   if (tempC != DEVICE_DISCONNECTED_C){
-//     Serial.println(tempC);
-//   }
-//   else{
-//     Serial.println("Error: Could not read temperature data");
-//   }
-//   if(tempC > 2){
-//     digitalWrite(CHARGER_CONTROL, HIGH);
-//   }
-//   else{
-//     digitalWrite(CHARGER_CONTROL, LOW);
-//   }
-// }
+void checkTemperature(){
+  sensors.requestTemperatures();
+  delay(1000);
+  float tempC = sensors.getTempCByIndex(0);
+  // Check if reading was successful
+  if (tempC == DEVICE_DISCONNECTED_C){
+    tempC = 10.0; // set a default value if the sensor is disconnected
+  }
+  if(tempC > 0.0){
+    digitalWrite(CHARGER_CONTROL, HIGH);
+  }
+  else{
+    digitalWrite(CHARGER_CONTROL, LOW);
+  }
+}
 
 
-void vbusWatcherTask(void *pvParameters) {
+void vbusWatcherTask(void *pvParameters){
   while(true){
+    if(ledCounter*V_TASK_WAIT >= ledOnDelay->getInt() * 3600000 && ledOff && ledActive->getBool()){
+      ledOff = false;
+      for(int i=0; i<NUMPIXELS; i++){
+        pixels.setPixelColor(i, pixels.Color(255, 255, 255));
+        pixels.show();
+        delay(50);
+      }
+      pixels.show();
+    }
+    else{
+      ledCounter++;
+    }
     displayBatteryCapacity();
     if(analogRead(VBUS_SENSE_PIN) > VSENSE_THRESHOLD){
       // USB just got plugged in while we were running — go to sleep
-      // checkTemperature();
+      if(tempControl->getBool()) checkTemperature();
+      else digitalWrite(CHARGER_CONTROL, HIGH);
       toWakeup = true;
       digitalWrite(LED_BUILTIN, HIGH);
       Serial.flush();
@@ -246,7 +272,7 @@ void vbusWatcherTask(void *pvParameters) {
         begin_wifi(LED_R_PIN, ipAddressHost->getString());
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(10000)); // check once every 10 seconds
+    vTaskDelay(pdMS_TO_TICKS(V_TASK_WAIT)); // check once every 10 seconds
   }
 }
 

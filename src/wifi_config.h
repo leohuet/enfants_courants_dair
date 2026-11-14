@@ -28,8 +28,8 @@ char host[22];
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEF };
 IPAddress hostIP;
 IPAddress gateway(192, 168, 68, 1);
-IPAddress subnet(255, 255, 252, 0);   // your router
-IPAddress dns(192, 168, 68, 1);       // or 8.8.8.8
+IPAddress subnet(255, 255, 252, 0);
+IPAddress dns(192, 168, 68, 1);
 
 EthernetClient client;
 
@@ -102,7 +102,7 @@ void begin_wifi(gpio_num_t led_pin, String ipAddress){
                       info.wifi_sta_disconnected.reason);
     }
   });
-  ArduinoOTA.setHostname("arduino");
+  ArduinoOTA.setHostname(host);
   ArduinoOTA.setPassword(OTA_PASS);
   ArduinoOTA
   .onStart([]() {
