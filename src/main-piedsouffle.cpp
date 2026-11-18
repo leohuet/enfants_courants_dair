@@ -43,6 +43,7 @@ bool espUiOn = true;
 
 void setup(){
   Serial.begin(115200);
+  checkBatteryAtBoot();
   sensors.begin();
   pixels.begin();
   pinMode(LED_BUILTIN, OUTPUT);
@@ -52,12 +53,13 @@ void setup(){
   pinMode(LED_R_PIN, OUTPUT);
   pinMode(LED_G_PIN, OUTPUT);
   pinMode(LED_B_PIN, OUTPUT);
+  pinMode(CHARGER_CONTROL, OUTPUT);
+  digitalWrite(CHARGER_CONTROL, LOW);
   digitalWrite(LED_R_PIN, LOW);
   digitalWrite(LED_G_PIN, LOW);
   digitalWrite(LED_B_PIN, LOW);
   randomSeed(analogRead(GPIO_NUM_44));
   delay(2000);
-  pinMode(CHARGER_CONTROL, OUTPUT);
   w5500PowerUp();
   setupUI(1);
   delay(1000);
@@ -81,7 +83,6 @@ void setup(){
   digitalWrite(LED_R_PIN, LOW);
   digitalWrite(LED_G_PIN, HIGH);
   digitalWrite(LED_B_PIN, LOW);
-  delay(500);
   pixels.clear();
   if(ledActive->getBool()){
     pixels.setBrightness(ledBrightness->getInt());

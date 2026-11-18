@@ -13,8 +13,8 @@
 #define V_TASK_WAIT 10000
 #define uS_TO_S_FACTOR 1000000ULL
 #define MAX_MEAN_SIZE 100
-#define CHARGER_CONTROL GPIO_NUM_8
-#define LED_STRIP_PIN GPIO_NUM_7
+#define CHARGER_CONTROL GPIO_NUM_7
+#define LED_STRIP_PIN GPIO_NUM_8
 #define NUMPIXELS 12
 #define PHYCFGR_POWERDOWN   0xD8
 #define PHYCFGR_NORMAL      0xF8
@@ -86,6 +86,9 @@ bool onEthernetBool = false;
 bool onBatteryBool = false;
 bool ledOff = true;
 unsigned long ledCounter = 0;
+bool toTurnOn = true;
+static int lowCount = 0;
+uint8_t displayBatteryCounter = 0;
 
 // ====== SETUP UI ======
 void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
@@ -114,6 +117,11 @@ void setupUI(uint8_t numControl) {
   
   uint16_t rebootButton = ESPUI.button("Reboot", [](Control *sender, int eventname) {
     ESP.restart();
+  }, ControlColor::Alizarin);
+  uint16_t toDeepSleepButton = ESPUI.button("Deep Sleep", [](Control *sender, int eventname) {
+    WiFi.mode(WIFI_OFF);
+    esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
+    esp_deep_sleep_start();
   }, ControlColor::Alizarin);
 
   // general tab
@@ -207,20 +215,49 @@ void displayBatteryCapacity(){
     digitalWrite(LED_G_PIN, LOW);
     digitalWrite(LED_B_PIN, HIGH);
   }
+  if(battVoltage < 3.3){
+    lowCount++;
+    if (lowCount >= 3) {
+      WiFi.mode(WIFI_OFF);
+      digitalWrite(CHARGER_CONTROL, LOW);
+      esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
+      esp_deep_sleep_start();
+    }
+  } else {
+    lowCount = 0;
+  }
+}
+
+void checkBatteryAtBoot(){
+  int battRaw = analogRead(BATT_PIN);
+  float battVoltage = (battRaw / 2430.0) * 4.13;
+  if(battVoltage >= 3.6){
+    return;
+  }
+  else{
+    WiFi.mode(WIFI_OFF);
+    digitalWrite(CHARGER_CONTROL, LOW);
+    esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
+    esp_deep_sleep_start();
+  }
 }
 
 void checkTemperature(){
   sensors.requestTemperatures();
   delay(1000);
   float tempC = sensors.getTempCByIndex(0);
-  // Check if reading was successful
   if (tempC == DEVICE_DISCONNECTED_C){
-    tempC = 10.0; // set a default value if the sensor is disconnected
+    tempC = 3.0;
   }
-  if(tempC > 0.0){
+  if(tempC < 2.0 || tempC > 45.0){
+    digitalWrite(CHARGER_CONTROL, LOW);
+    toTurnOn = true;
+  }
+  else if(tempC > 4.0 && tempC < 40.0 && toTurnOn){
     digitalWrite(CHARGER_CONTROL, HIGH);
+    toTurnOn = false;
   }
-  else{
+  else if(toTurnOn){
     digitalWrite(CHARGER_CONTROL, LOW);
   }
 }
@@ -240,11 +277,24 @@ void vbusWatcherTask(void *pvParameters){
     else{
       ledCounter++;
     }
-    displayBatteryCapacity();
+
+    if(displayBatteryCounter == 0 || displayBatteryCounter >= 30 && !toWakeup){
+      displayBatteryCapacity();
+      displayBatteryCounter = 1;
+    }
+    else if(toWakeup){
+      displayBatteryCapacity();
+      displayBatteryCounter = 0;
+    }
+    else{
+      displayBatteryCounter++;
+    }
+
     if(analogRead(VBUS_SENSE_PIN) > VSENSE_THRESHOLD){
       // USB just got plugged in while we were running — go to sleep
       if(tempControl->getBool()) checkTemperature();
       else digitalWrite(CHARGER_CONTROL, HIGH);
+      pixels.clear();
       toWakeup = true;
       digitalWrite(LED_BUILTIN, HIGH);
       Serial.flush();
@@ -261,6 +311,9 @@ void vbusWatcherTask(void *pvParameters){
       // USB is not plugged in, keep running
       toWakeup = false;
       rtc_gpio_deinit(VBUS_SENSE_PIN);
+      digitalWrite(LED_R_PIN, LOW);
+      digitalWrite(LED_G_PIN, LOW);
+      digitalWrite(LED_B_PIN, LOW);
       if(onEthernetBool){
         w5500PowerUp();
         begin_ethernet(LED_R_PIN, ipAddressHost->getString());
@@ -272,13 +325,12 @@ void vbusWatcherTask(void *pvParameters){
         begin_wifi(LED_R_PIN, ipAddressHost->getString());
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(V_TASK_WAIT)); // check once every 10 seconds
+    vTaskDelay(pdMS_TO_TICKS(V_TASK_WAIT));
   }
 }
 
 
 void sendData(uint8_t index, float value){
-  // only if toggles to send to Ableton and/or Touch are on
   IPAddress outIP;
   outIP.fromString(baseSendIP);
   String address = baseOscParams[index].address;
