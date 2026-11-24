@@ -54,7 +54,7 @@ void setup(){
   pinMode(LED_G_PIN, OUTPUT);
   pinMode(LED_B_PIN, OUTPUT);
   pinMode(CHARGER_CONTROL, OUTPUT);
-  digitalWrite(CHARGER_CONTROL, LOW);
+  digitalWrite(CHARGER_CONTROL, HIGH);
   digitalWrite(LED_R_PIN, LOW);
   digitalWrite(LED_G_PIN, LOW);
   digitalWrite(LED_B_PIN, LOW);
@@ -75,7 +75,10 @@ void setup(){
     delay(2000);
     onBatteryBool = onBattery->getBool();
   }
-
+  digitalWrite(LED_R_PIN, LOW);
+  digitalWrite(LED_G_PIN, LOW);
+  digitalWrite(LED_B_PIN, HIGH);
+  delay(500);
   digitalWrite(LED_R_PIN, HIGH);
   digitalWrite(LED_G_PIN, LOW);
   digitalWrite(LED_B_PIN, LOW);
@@ -91,7 +94,9 @@ void setup(){
       pixels.show();
       delay(100);
     }
-    // pixels.clear();
+    delay(200);
+    pixels.clear();
+    pixels.show();
   }
   if(onBatteryBool){
     xTaskCreatePinnedToCore(

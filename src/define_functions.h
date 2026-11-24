@@ -9,8 +9,9 @@
 #define LED_G_PIN GPIO_NUM_3
 #define LED_B_PIN GPIO_NUM_1
 #define VSENSE_THRESHOLD 2500
-#define SLEEP_TIME 900
-#define V_TASK_WAIT 10000
+#define SLEEP_TIME 300
+#define COLD_SLEEP_TIME 60
+#define V_TASK_WAIT 5
 #define uS_TO_S_FACTOR 1000000ULL
 #define MAX_MEAN_SIZE 100
 #define CHARGER_CONTROL GPIO_NUM_7
@@ -77,18 +78,20 @@ extern Adafruit_NeoPixel pixels;
 // UDP pour les messages OSC
 WiFiUDP wifiUdp;
 EthernetUDP ethUdp;
-String baseName = "borne_ESP_1";
+String baseName = "ESP_toit_2";
 String baseSendIP = "192.168.68.100";
-String baseHostIP = "192.168.68.101";
+String baseHostIP = "192.168.68.105";
 uint16_t madPortValue = 9001;
 uint16_t maxPortValue = 8001;
 bool onEthernetBool = false;
 bool onBatteryBool = false;
 bool ledOff = true;
+bool chargerCutByTemp = false;
+bool firstTimeCharge = false;
 unsigned long ledCounter = 0;
 bool toTurnOn = true;
 static int lowCount = 0;
-uint8_t displayBatteryCounter = 0;
+uint16_t displayBatteryCounter = 0;
 
 // ====== SETUP UI ======
 void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
@@ -101,7 +104,7 @@ void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
     oscParams[i].minVal = new PersistentValue(short_label + "_min_" + type, ControlColor::Wetasphalt, baseOscParams[i].minVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
     oscParams[i].maxVal = new PersistentValue(short_label + "_max_" + type, ControlColor::Wetasphalt, baseOscParams[i].maxVal, baseOscParams[i].minVal, baseOscParams[i].maxVal, tabId);
     oscParams[i].sizeMean = new PersistentValue(short_label + "_size_mean", ControlColor::Wetasphalt, 10, 1, 100, tabId);
-    oscParams[i].noiseAmount = new PersistentValue(short_label + "_noise_amount", ControlColor::Emerald, baseOscParams[i].noiseAmount, 0, 100, tabId);
+    oscParams[i].noiseAmount = new PersistentValue(short_label + "_noise_%", ControlColor::Emerald, baseOscParams[i].noiseAmount, 0, 100, tabId);
     oscParams[i].noiseAmplitude = new PersistentValue(short_label + "_noise_amplitude", ControlColor::Emerald, baseOscParams[i].noiseAmplitude, 0, 100, tabId);
     oscParams[i].noiseMax = new PersistentValue(short_label + "_noise_max", ControlColor::Emerald, baseOscParams[i].noiseMax, 0, 100, tabId);
     oscParams[i].send = new PersistentValue(short_label + "_send", ControlColor::Alizarin, baseOscParams[i].send, tabId);
@@ -142,7 +145,7 @@ void setupUI(uint8_t numControl) {
 
   ledActive = new PersistentValue("LEDStrip active", ControlColor::Wetasphalt, true, generalTab);
   ledOnDelay = new PersistentValue("LEDStrip on delay (in hours)", ControlColor::Wetasphalt, 1, 0, 20, generalTab);
-  ledBrightness = new PersistentValue("LEDStrip brightness", ControlColor::Wetasphalt, 128, 0, 255, generalTab);
+  ledBrightness = new PersistentValue("LEDStrip brightness", ControlColor::Wetasphalt, 100, 0, 255, generalTab);
   // osc tabs
   // for each parameter, display controls for address, min & max, toggle for Touch/Ableton send and test button
   addOscControls(0, numControl, oscTabs[0]);
@@ -242,7 +245,7 @@ void checkBatteryAtBoot(){
   }
 }
 
-void checkTemperature(){
+bool checkTemperature(){
   sensors.requestTemperatures();
   delay(1000);
   float tempC = sensors.getTempCByIndex(0);
@@ -252,20 +255,23 @@ void checkTemperature(){
   if(tempC < 2.0 || tempC > 45.0){
     digitalWrite(CHARGER_CONTROL, LOW);
     toTurnOn = true;
+    return true;
   }
   else if(tempC > 4.0 && tempC < 40.0 && toTurnOn){
     digitalWrite(CHARGER_CONTROL, HIGH);
     toTurnOn = false;
+    return false;
   }
   else if(toTurnOn){
     digitalWrite(CHARGER_CONTROL, LOW);
+    return true;
   }
+  return false;
 }
-
 
 void vbusWatcherTask(void *pvParameters){
   while(true){
-    if(ledCounter*V_TASK_WAIT >= ledOnDelay->getInt() * 3600000 && ledOff && ledActive->getBool()){
+    if(ledCounter*V_TASK_WAIT >= ledOnDelay->getInt() * 3600 && ledOff && ledActive->getBool()){
       ledOff = false;
       for(int i=0; i<NUMPIXELS; i++){
         pixels.setPixelColor(i, pixels.Color(255, 255, 255));
@@ -278,24 +284,31 @@ void vbusWatcherTask(void *pvParameters){
       ledCounter++;
     }
 
-    if(displayBatteryCounter == 0 || displayBatteryCounter >= 30 && !toWakeup){
+    if((displayBatteryCounter == 0 || displayBatteryCounter*V_TASK_WAIT >= 300) && !toWakeup){
       displayBatteryCapacity();
       displayBatteryCounter = 1;
-    }
-    else if(toWakeup){
-      displayBatteryCapacity();
-      displayBatteryCounter = 0;
     }
     else{
       displayBatteryCounter++;
     }
 
+    if (toWakeup && chargerCutByTemp) {
+      digitalWrite(CHARGER_CONTROL, HIGH);   // enable briefly just to sense VBUS
+      delay(100);
+    }
+    firstTimeCharge = !toWakeup;
     if(analogRead(VBUS_SENSE_PIN) > VSENSE_THRESHOLD){
       // USB just got plugged in while we were running — go to sleep
-      if(tempControl->getBool()) checkTemperature();
-      else digitalWrite(CHARGER_CONTROL, HIGH);
-      pixels.clear();
       toWakeup = true;
+      if(tempControl->getBool()){
+        chargerCutByTemp = checkTemperature();
+      }
+      else{
+        digitalWrite(CHARGER_CONTROL, HIGH);
+        chargerCutByTemp = false;
+      }
+      pixels.clear();
+      pixels.show();
       digitalWrite(LED_BUILTIN, HIGH);
       Serial.flush();
       WiFi.mode(WIFI_OFF);
@@ -303,17 +316,48 @@ void vbusWatcherTask(void *pvParameters){
         ethUdp.stop();
         w5500PowerDown();
       }
-      esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_SENSE_PIN, 0);
-      esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
+      if(!chargerCutByTemp){
+        if(firstTimeCharge){
+          digitalWrite(LED_R_PIN, LOW);
+          digitalWrite(LED_G_PIN, LOW);
+          digitalWrite(LED_B_PIN, LOW);
+          delay(500);
+          digitalWrite(LED_R_PIN, LOW);
+          digitalWrite(LED_G_PIN, LOW);
+          digitalWrite(LED_B_PIN, HIGH);
+          delay(500);
+          digitalWrite(LED_R_PIN, LOW);
+          digitalWrite(LED_G_PIN, LOW);
+          digitalWrite(LED_B_PIN, LOW);
+          delay(500);
+          digitalWrite(LED_R_PIN, LOW);
+          digitalWrite(LED_G_PIN, HIGH);
+          digitalWrite(LED_B_PIN, LOW);
+        }
+        esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_SENSE_PIN, 0);
+        esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
+      }
+      else{
+        digitalWrite(LED_R_PIN, HIGH);
+        digitalWrite(LED_G_PIN, LOW);
+        digitalWrite(LED_B_PIN, LOW);
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
+        esp_sleep_enable_timer_wakeup(COLD_SLEEP_TIME * uS_TO_S_FACTOR);
+      }
       esp_light_sleep_start();
     }
     else if(analogRead(VBUS_SENSE_PIN) < VSENSE_THRESHOLD && toWakeup){
-      // USB is not plugged in, keep running
+      // USB just got unplugged, restart
       toWakeup = false;
-      rtc_gpio_deinit(VBUS_SENSE_PIN);
+      chargerCutByTemp = false;
+      digitalWrite(CHARGER_CONTROL, HIGH);
+      rtc_gpio_deinit(VBUS_SENSE_PIN);  
       digitalWrite(LED_R_PIN, LOW);
       digitalWrite(LED_G_PIN, LOW);
       digitalWrite(LED_B_PIN, LOW);
+      delay(500);
+      displayBatteryCounter = 0;
+      ledCounter = 0;
       if(onEthernetBool){
         w5500PowerUp();
         begin_ethernet(LED_R_PIN, ipAddressHost->getString());
@@ -324,8 +368,18 @@ void vbusWatcherTask(void *pvParameters){
         WiFi.mode(WIFI_STA);
         begin_wifi(LED_R_PIN, ipAddressHost->getString());
       }
+      if(ledActive->getBool()){
+        for(int i=0; i<NUMPIXELS; i++){
+          pixels.setPixelColor(i, pixels.Color(255, 255, 255));
+          pixels.show();
+          delay(100);
+        }
+        delay(200);
+        pixels.clear();
+        pixels.show();
+      }
     }
-    vTaskDelay(pdMS_TO_TICKS(V_TASK_WAIT));
+    vTaskDelay(pdMS_TO_TICKS(V_TASK_WAIT*1000));
   }
 }
 

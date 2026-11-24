@@ -13,12 +13,21 @@
 #include "persistentValue.h"
 #include "define_functions.h"
 
+#include <Adafruit_NeoPixel.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 #define ANEMOMETER_PIN GPIO_NUM_4
 #define WIND_VANE_PIN GPIO_NUM_5
 #define COMPASS_DIRECTIONS 16
 #define SAMPLE_INTERVAL_MS 1500UL
 #define NUM_PARAMS 2
+#define ONE_WIRE_BUS -1
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+Adafruit_NeoPixel pixels(NUMPIXELS, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 
 OSCParam oscParams[NUM_PARAMS];
 
