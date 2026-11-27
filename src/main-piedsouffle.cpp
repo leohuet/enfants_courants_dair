@@ -43,18 +43,21 @@ bool espUiOn = true;
 
 void setup(){
   Serial.begin(115200);
-  checkBatteryAtBoot();
-  sensors.begin();
-  pixels.begin();
+  pinMode(CHARGER_CONTROL, OUTPUT);
+  digitalWrite(CHARGER_CONTROL, HIGH);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(VBUS_SENSE_PIN, INPUT);
   pinMode(BATT_PIN, INPUT);
+  delay(500);
+  if(analogRead(VBUS_SENSE_PIN) < VSENSE_THRESHOLD){
+    checkBatteryAtBoot();
+  }
+  sensors.begin();
+  pixels.begin();
   pinMode(WIND_SENS_PIN, INPUT);
   pinMode(LED_R_PIN, OUTPUT);
   pinMode(LED_G_PIN, OUTPUT);
   pinMode(LED_B_PIN, OUTPUT);
-  pinMode(CHARGER_CONTROL, OUTPUT);
-  digitalWrite(CHARGER_CONTROL, HIGH);
   digitalWrite(LED_R_PIN, LOW);
   digitalWrite(LED_G_PIN, LOW);
   digitalWrite(LED_B_PIN, LOW);
@@ -94,7 +97,7 @@ void setup(){
       pixels.show();
       delay(100);
     }
-    delay(200);
+    delay(30000);
     pixels.clear();
     pixels.show();
   }
@@ -102,7 +105,7 @@ void setup(){
     xTaskCreatePinnedToCore(
       vbusWatcherTask,   // task function
       "vbusWatcher",     // name
-      2048,              // stack size (bytes)
+      4096,              // stack size (bytes)
       NULL,              // parameters
       1,                 // priority (low is fine here)
       NULL,              // task handle (not needed)

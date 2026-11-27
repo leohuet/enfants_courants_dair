@@ -56,6 +56,7 @@ PersistentValue* ipAddressHost;
 PersistentValue* isStarted;
 PersistentValue* onBattery;
 PersistentValue* tempControl;
+PersistentValue* debug;
 
 PersistentValue* ipAddressSend;
 PersistentValue* madPort;
@@ -92,6 +93,7 @@ unsigned long ledCounter = 0;
 bool toTurnOn = true;
 static int lowCount = 0;
 uint16_t displayBatteryCounter = 0;
+uint8_t tempState = HIGH;
 
 // ====== SETUP UI ======
 void addOscControls(int startIdx, int endIdx, uint16_t tabId) {
@@ -133,6 +135,7 @@ void setupUI(uint8_t numControl) {
   isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
   onBattery = new PersistentValue("On battery", ControlColor::Alizarin, false, generalTab);
   tempControl = new PersistentValue("Temperature charge control", ControlColor::Alizarin, true, generalTab);
+  debug = new PersistentValue("Debug", ControlColor::Alizarin, false, generalTab);
   
   ESPUI.addControl(ControlType::Separator, "Network", "", ControlColor::None, generalTab);
   ipAddressHost = new PersistentValue("IP host", ControlColor::Peterriver, baseHostIP, generalTab);
@@ -200,15 +203,61 @@ void w5500PowerUp() {
   W5100.writePHYCFGR_W5500(PHYCFGR_NORMAL);
 }
 
+
+void sendDebug(String address, float value){
+  IPAddress outIP;
+  outIP.fromString(baseSendIP);
+  OSCMessage msg(address.c_str());
+  if(espUiOn){
+    outIP.fromString(ipAddressSend->getString());
+  }
+  msg.add(value);
+  wifiUdp.beginPacket(outIP, 8888);
+  msg.send(wifiUdp);
+  wifiUdp.endPacket();
+  msg.empty();
+}
+
+bool checkTemperature(){
+  sensors.requestTemperatures();
+  delay(1000);
+  float tempC = sensors.getTempCByIndex(0);
+  if (tempC == DEVICE_DISCONNECTED_C) tempC = 3.0;
+
+  if(tempC < 2.0 || tempC > 45.0) tempState = LOW;
+  else if(tempC > 4.0 && tempC < 40.0) tempState = HIGH;
+  digitalWrite(CHARGER_CONTROL, tempState);
+  if(debug->getBool()) sendDebug("/temperature", tempC);
+  return !tempState;
+}
+
+void goDeepSleep(){
+  WiFi.mode(WIFI_OFF);
+  if(tempControl->getBool()){
+    chargerCutByTemp = checkTemperature();
+  }
+  else{
+    digitalWrite(CHARGER_CONTROL, HIGH);
+    chargerCutByTemp = false;
+  }
+  if(chargerCutByTemp) digitalWrite(CHARGER_CONTROL, LOW);
+  else digitalWrite(CHARGER_CONTROL, HIGH);
+  gpio_hold_en((gpio_num_t)CHARGER_CONTROL);
+  gpio_deep_sleep_hold_en();
+  esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_SENSE_PIN, 1);
+  esp_deep_sleep_start();
+}
+
 void displayBatteryCapacity(){
   int battRaw = analogRead(BATT_PIN);
   float battVoltage = (battRaw / 2430.0) * 4.13;
-  if (battVoltage <= 3.75){
+  if (battVoltage <= 3.8){
     digitalWrite(LED_R_PIN, HIGH);
     digitalWrite(LED_G_PIN, LOW);
     digitalWrite(LED_B_PIN, LOW);
   }
-  else if (battVoltage > 3.75 && battVoltage <= 4){
+  else if (battVoltage > 3.8 && battVoltage <= 4){
     digitalWrite(LED_R_PIN, LOW);
     digitalWrite(LED_G_PIN, HIGH);
     digitalWrite(LED_B_PIN, LOW);
@@ -218,59 +267,38 @@ void displayBatteryCapacity(){
     digitalWrite(LED_G_PIN, LOW);
     digitalWrite(LED_B_PIN, HIGH);
   }
-  if(battVoltage < 3.3){
+
+  if(battVoltage < 3.6){
     lowCount++;
-    if (lowCount >= 3) {
-      WiFi.mode(WIFI_OFF);
-      digitalWrite(CHARGER_CONTROL, LOW);
-      esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
-      esp_deep_sleep_start();
+    if(lowCount >= 3){
+      goDeepSleep();
     }
-  } else {
+  }
+  else {
     lowCount = 0;
   }
+
+  if(debug->getBool()) sendDebug("/battery", battVoltage);
 }
 
 void checkBatteryAtBoot(){
   int battRaw = analogRead(BATT_PIN);
   float battVoltage = (battRaw / 2430.0) * 4.13;
-  if(battVoltage >= 3.6){
+  if(battVoltage >= 3.7){
     return;
   }
   else{
-    WiFi.mode(WIFI_OFF);
-    digitalWrite(CHARGER_CONTROL, LOW);
-    esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
-    esp_deep_sleep_start();
+    goDeepSleep();
   }
 }
 
-bool checkTemperature(){
-  sensors.requestTemperatures();
-  delay(1000);
-  float tempC = sensors.getTempCByIndex(0);
-  if (tempC == DEVICE_DISCONNECTED_C){
-    tempC = 3.0;
-  }
-  if(tempC < 2.0 || tempC > 45.0){
-    digitalWrite(CHARGER_CONTROL, LOW);
-    toTurnOn = true;
-    return true;
-  }
-  else if(tempC > 4.0 && tempC < 40.0 && toTurnOn){
-    digitalWrite(CHARGER_CONTROL, HIGH);
-    toTurnOn = false;
-    return false;
-  }
-  else if(toTurnOn){
-    digitalWrite(CHARGER_CONTROL, LOW);
-    return true;
-  }
-  return false;
-}
 
 void vbusWatcherTask(void *pvParameters){
   while(true){
+    if(debug->getBool()){
+      displayBatteryCapacity();
+      checkTemperature();
+    }
     if(ledCounter*V_TASK_WAIT >= ledOnDelay->getInt() * 3600 && ledOff && ledActive->getBool()){
       ledOff = false;
       for(int i=0; i<NUMPIXELS; i++){
@@ -358,6 +386,7 @@ void vbusWatcherTask(void *pvParameters){
       delay(500);
       displayBatteryCounter = 0;
       ledCounter = 0;
+      ledOff = true;
       if(onEthernetBool){
         w5500PowerUp();
         begin_ethernet(LED_R_PIN, ipAddressHost->getString());
@@ -374,7 +403,7 @@ void vbusWatcherTask(void *pvParameters){
           pixels.show();
           delay(100);
         }
-        delay(200);
+        delay(30000);
         pixels.clear();
         pixels.show();
       }

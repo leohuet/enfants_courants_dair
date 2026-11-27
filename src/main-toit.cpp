@@ -196,6 +196,7 @@ void loop(){
     windDir = moyenne_glissante(wind_vane_for_mean, wind_vane_size_mean, windDir);
     windDir = (windDir - minDir) / (maxDir - minDir);
     windDir = ((int) (windDir * 100 + dir_noise)) / 100.0;
+    if(windDir > 0.5) windDir = ((windDir - 0.5) / 0.5) * -0.5 + 0.5;
     if(windDir != oldWindDir){
       oldWindDir = windDir;
       // Serial.print("Wind dir: ");
