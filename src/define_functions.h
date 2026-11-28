@@ -268,7 +268,7 @@ void displayBatteryCapacity(){
     digitalWrite(LED_B_PIN, HIGH);
   }
 
-  if(battVoltage < 3.6){
+  if(analogRead(VBUS_SENSE_PIN) < VSENSE_THRESHOLD && battVoltage < 3.4){
     lowCount++;
     if(lowCount >= 3){
       goDeepSleep();
@@ -284,7 +284,7 @@ void displayBatteryCapacity(){
 void checkBatteryAtBoot(){
   int battRaw = analogRead(BATT_PIN);
   float battVoltage = (battRaw / 2430.0) * 4.13;
-  if(battVoltage >= 3.7){
+  if(battVoltage >= 3.5){
     return;
   }
   else{

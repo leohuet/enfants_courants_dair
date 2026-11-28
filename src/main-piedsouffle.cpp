@@ -45,6 +45,8 @@ void setup(){
   Serial.begin(115200);
   pinMode(CHARGER_CONTROL, OUTPUT);
   digitalWrite(CHARGER_CONTROL, HIGH);
+  gpio_hold_dis((gpio_num_t)CHARGER_CONTROL);
+  gpio_deep_sleep_hold_dis();
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(VBUS_SENSE_PIN, INPUT);
   pinMode(BATT_PIN, INPUT);
